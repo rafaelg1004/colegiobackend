@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
@@ -9,71 +9,71 @@ export class ReportesService {
    * Obtiene toda la información necesaria para generar un boletín detallado
    */
   async getDatosBoletin(estudianteId: string, periodoId?: string) {
-    // 1. Datos del estudiante y su matrícula
-    const { data: estudiante, error: estErr } = await this.supabase.admin
-      .from('estudiante')
-      .select(`
-        *,
-        matricula!inner(
-          id,
-          grupo:grupo_id(nombre, grado:grado_id(nombre), sede:sede_id(nombre)),
-          anio_lectivo:anio_lectivo_id(anio)
-        )
-      `)
-      .eq('id', estudianteId)
-      .single();
+    console.log('📊 getDatosBoletin called with:', { estudianteId, periodoId });
 
-    if (estErr) throw new BadRequestException('Error al obtener datos del estudiante');
+    try {
+      // 1. Datos del estudiante
+      const { data: estudiante, error: estErr } = await this.supabase.admin
+        .from('estudiante')
+        .select('*')
+        .eq('id', estudianteId)
+        .single();
 
-    // 2. Notas - si hay periodo_id lo usamos, si no trae todas
-    let notasQuery = this.supabase.admin
-      .from('nota_periodo')
-      .select(`
-        nota_final, desempeno, observacion_docente,
-        asignatura:asignatura_id(nombre, area:area_id(nombre)),
-        periodo:periodo_academico_id(nombre, numero)
-      `)
-      .eq('estudiante_id', estudianteId);
+      console.log('📝 Estudiante query:', { estErr, estudiante });
 
-    if (periodoId) {
-      notasQuery = notasQuery.eq('periodo_academico_id', periodoId);
+      if (estErr || !estudiante) {
+        throw new NotFoundException('Estudiante no encontrado');
+      }
+
+      // 2. Notas
+      let notasQuery = this.supabase.admin
+        .from('nota_periodo')
+        .select(`
+          nota_final, desempeno, observacion_docente,
+          asignatura:asignatura_id(nombre),
+          periodo:periodo_academico_id(nombre, numero)
+        `)
+        .eq('estudiante_id', estudianteId);
+
+      if (periodoId && periodoId.trim() !== '') {
+        notasQuery = notasQuery.eq('periodo_academico_id', periodoId);
+      }
+
+      const { data: notas, error: notaErr } = await notasQuery;
+      console.log('📋 Notas query:', { notaErr, count: notas?.length });
+
+      // 3. Asistencia
+      let asistenciaQuery = this.supabase.admin
+        .from('asistencia')
+        .select('estado')
+        .eq('estudiante_id', estudianteId);
+
+      if (periodoId && periodoId.trim() !== '') {
+        asistenciaQuery = asistenciaQuery.eq('periodo_academico_id', periodoId);
+      }
+
+      const { data: asistencia } = await asistenciaQuery;
+
+      // 4. Observaciones
+      const { data: anotaciones } = await this.supabase.admin
+        .from('observacion')
+        .select('tipo, descripcion, fecha')
+        .eq('estudiante_id', estudianteId)
+        .order('fecha', { ascending: false });
+
+      return {
+        estudiante,
+        calificaciones: notas || [],
+        estadisticas: {
+          inasistencias: asistencia?.filter(a => a.estado === 'Ausente').length || 0,
+          tardanzas: asistencia?.filter(a => a.estado === 'Tardanza').length || 0,
+        },
+        observaciones_convivencia: anotaciones || []
+      };
+    } catch (error) {
+      console.error('❌ Error in getDatosBoletin:', error);
+      throw error;
     }
-
-    const { data: notas, error: notaErr } = await notasQuery;
-
-    if (notaErr) throw new BadRequestException('Error al obtener calificaciones');
-
-    // 3. Resumen de asistencia
-    let asistenciaQuery = this.supabase.admin
-      .from('asistencia')
-      .select('estado');
-
-    if (periodoId) {
-      asistenciaQuery = asistenciaQuery.eq('periodo_academico_id', periodoId);
-    }
-
-    const { data: asistencia } = await asistenciaQuery.eq('estudiante_id', estudianteId);
-
-    // 4. Observaciones del observador
-    let anotacionesQuery = this.supabase.admin
-      .from('observador_anotacion')
-      .select('tipo, descripcion, fecha');
-
-    if (periodoId) {
-      anotacionesQuery = anotacionesQuery.eq('periodo_academico_id', periodoId);
-    }
-
-    const { data: anotaciones } = await anotacionesQuery.eq('estudiante_id', estudianteId);
-
-    return {
-      estudiante,
-      calificaciones: notas,
-      estadisticas: {
-        inasistencias: asistencia?.filter(a => a.estado === 'Ausente').length || 0,
-        tardanzas: asistencia?.filter(a => a.estado === 'Tardanza').length || 0,
-      },
-      observaciones_convivencia: anotaciones
-    };
   }
 
   /**

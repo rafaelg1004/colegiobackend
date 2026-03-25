@@ -42,6 +42,16 @@ export class FinancieroService {
     return { message: 'Concepto actualizado', data };
   }
 
+  async deleteConcepto(id: string) {
+    const { error } = await this.supabase.admin
+      .from('concepto_cobro')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Concepto eliminado' };
+  }
+
   // ======================
   // DESCUENTOS
   // ======================

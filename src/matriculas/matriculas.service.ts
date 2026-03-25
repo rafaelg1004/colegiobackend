@@ -114,6 +114,32 @@ export class MatriculasService {
     return { message: 'Matrícula actualizada', data };
   }
 
+  async findOne(id: string) {
+    const { data, error } = await this.supabase.admin
+      .from('matricula')
+      .select(`
+        *,
+        estudiante:estudiante_id(*),
+        grupo:grupo_id(*, grado:grado_id(nombre, nivel:nivel_id(nombre))),
+        anio_lectivo:anio_lectivo_id(anio, activo)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error || !data) throw new NotFoundException('Matrícula no encontrada');
+    return data;
+  }
+
+  async remove(id: string) {
+    const { error } = await this.supabase.admin
+      .from('matricula')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Matrícula eliminada' };
+  }
+
   async matriculaMasiva(estudianteIds: string[], grupoId: string, anioLectivoId: string) {
     const registros = estudianteIds.map((eid) => ({
       estudiante_id: eid,

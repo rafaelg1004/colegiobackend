@@ -26,6 +26,16 @@ export class InventarioService {
     return { message: 'Categoría creada', data };
   }
 
+  async deleteCategoria(id: string) {
+    const { error } = await this.supabase.admin
+      .from('categoria_inventario')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Categoría eliminada' };
+  }
+
   // --- Artículos ---
   async crearArticulo(dto: CreateArticuloDto) {
     const { data, error } = await this.supabase.admin
@@ -88,6 +98,16 @@ export class InventarioService {
     if (error) throw new BadRequestException(error.message);
     if (!data) throw new NotFoundException('Artículo no encontrado');
     return { message: 'Artículo actualizado', data };
+  }
+
+  async deleteArticulo(id: string) {
+    const { error } = await this.supabase.admin
+      .from('articulo_inventario')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Artículo eliminado' };
   }
 
   // --- Movimientos ---
@@ -180,6 +200,16 @@ export class InventarioService {
     const { data, error } = await qb;
     if (error) throw new BadRequestException(error.message);
     return data;
+  }
+
+  async deleteEspacio(id: string) {
+    const { error } = await this.supabase.admin
+      .from('espacio_fisico')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Espacio eliminado' };
   }
 
   // --- Resumen ---

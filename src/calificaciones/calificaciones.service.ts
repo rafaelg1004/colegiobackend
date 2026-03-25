@@ -43,6 +43,56 @@ export class CalificacionesService {
     return data;
   }
 
+  async getActividad(id: string) {
+    const { data, error } = await this.supabase.admin
+      .from('actividad_evaluativa')
+      .select(`
+        *,
+        tipo_actividad:tipo_actividad_id(nombre),
+        asignatura:asignatura_id(nombre),
+        grupo:grupo_id(nombre, grado:grado_id(nombre)),
+        periodo:periodo_academico_id(nombre, numero)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error || !data) throw new NotFoundException('Actividad evaluativa no encontrada');
+    return data;
+  }
+
+  async updateActividad(id: string, dto: Partial<CreateActividadDto>) {
+    const { data, error } = await this.supabase.admin
+      .from('actividad_evaluativa')
+      .update(dto)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    if (!data) throw new NotFoundException('Actividad evaluativa no encontrada');
+    return { message: 'Actividad actualizada', data };
+  }
+
+  async deleteActividad(id: string) {
+    // Verificar que no tenga calificaciones registradas
+    const { count } = await this.supabase.admin
+      .from('calificacion')
+      .select('id', { count: 'exact', head: true })
+      .eq('actividad_evaluativa_id', id);
+
+    if (count && count > 0) {
+      throw new BadRequestException('No se puede eliminar la actividad porque tiene calificaciones registradas');
+    }
+
+    const { error } = await this.supabase.admin
+      .from('actividad_evaluativa')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Actividad eliminada' };
+  }
+
   async registrarNotas(dto: RegistrarNotasDto) {
     const { data: actividad, error: actErr } = await this.supabase.admin
       .from('actividad_evaluativa')

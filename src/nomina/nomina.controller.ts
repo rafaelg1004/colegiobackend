@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { NominaService } from './nomina.service';
 import {
   CreateEmpleadoDto, UpdateEmpleadoDto,
@@ -45,6 +45,13 @@ export class NominaController {
   @Roles('admin', 'rector', 'secretaria')
   updateEmpleado(@Param('id') id: string, @Body() dto: UpdateEmpleadoDto) {
     return this.nominaService.updateEmpleado(id, dto);
+  }
+
+  @Delete('empleados/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteEmpleado(@Param('id') id: string) {
+    return this.nominaService.deleteEmpleado(id);
   }
 
   // --- Liquidación de nómina ---

@@ -38,6 +38,23 @@ export class ObservadorService {
     return data || [];
   }
 
+  async getAllObservaciones(estudianteId?: string) {
+    let qb = this.supabase.admin
+      .from('observacion')
+      .select(`
+        *,
+        estudiante:estudiante_id(primer_nombre, primer_apellido, numero_documento),
+        registrado_por_empleado:registrado_por(primer_nombre, primer_apellido, cargo)
+      `)
+      .order('fecha', { ascending: false });
+
+    if (estudianteId) qb = qb.eq('estudiante_id', estudianteId);
+
+    const { data, error } = await qb;
+    if (error) throw new BadRequestException(error.message);
+    return data || [];
+  }
+
   async updateObservacion(id: string, dto: UpdateObservacionDto) {
     const { data, error } = await this.supabase.admin
       .from('observacion')
@@ -76,5 +93,15 @@ export class ObservadorService {
 
     if (error) throw new BadRequestException(error.message);
     return { message: 'Observacion firmada por acudiente', data };
+  }
+
+  async deleteObservacion(id: string) {
+    const { error } = await this.supabase.admin
+      .from('observacion')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Observacion eliminada' };
   }
 }

@@ -65,10 +65,79 @@ export class AcademicoService {
     return data;
   }
 
+  async updateArea(id: string, dto: Partial<CreateAreaDto>) {
+    const { data, error } = await this.supabase.admin.from('area').update(dto).eq('id', id).select().single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Área actualizada', data };
+  }
+
+  async deleteArea(id: string) {
+    const { error } = await this.supabase.admin.from('area').delete().eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Área eliminada' };
+  }
+
   async crearAsignatura(dto: CreateAsignaturaDto) {
     const { data, error } = await this.supabase.admin.from('asignatura').insert(dto).select().single();
     if (error) throw new BadRequestException(error.message);
     return data;
+  }
+
+  async getAsignaturas() {
+    const { data, error } = await this.supabase.admin.from('asignatura').select('*, area:area_id(nombre), grado:grado_id(nombre)').order('nombre');
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async updateAsignatura(id: string, dto: Partial<CreateAsignaturaDto>) {
+    const { data, error } = await this.supabase.admin.from('asignatura').update(dto).eq('id', id).select().single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Asignatura actualizada', data };
+  }
+
+  async deleteAsignatura(id: string) {
+    const { error } = await this.supabase.admin.from('asignatura').delete().eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Asignatura eliminada' };
+  }
+
+  // --- AÑO LECTIVO: update y delete ---
+  async updateAnioLectivo(id: string, dto: Partial<CreateAnioLectivoDto>) {
+    const { data, error } = await this.supabase.admin.from('anio_lectivo').update(dto).eq('id', id).select().single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Año lectivo actualizado', data };
+  }
+
+  async deleteAnioLectivo(id: string) {
+    const { error } = await this.supabase.admin.from('anio_lectivo').delete().eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Año lectivo eliminado' };
+  }
+
+  // --- PERIODO: update y delete ---
+  async updatePeriodo(id: string, dto: Partial<CreatePeriodoDto>) {
+    const { data, error } = await this.supabase.admin.from('periodo_academico').update(dto).eq('id', id).select().single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Período actualizado', data };
+  }
+
+  async deletePeriodo(id: string) {
+    const { error } = await this.supabase.admin.from('periodo_academico').delete().eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Período eliminado' };
+  }
+
+  // --- SEDE: update y delete ---
+  async updateSede(id: string, dto: Partial<CreateSedeDto>) {
+    const { data, error } = await this.supabase.admin.from('sede').update(dto).eq('id', id).select().single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Sede actualizada', data };
+  }
+
+  async deleteSede(id: string) {
+    const { error } = await this.supabase.admin.from('sede').delete().eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Sede eliminada' };
   }
 
   // --- CARGA ACADÉMICA (ASIGNACIONES) ---

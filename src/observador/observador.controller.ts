@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ObservadorService } from './observador.service';
 import { CreateObservacionDto, UpdateObservacionDto } from './dto/observador.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -22,6 +22,11 @@ export class ObservadorController {
     return this.observadorService.getObservacionesEstudiante(id);
   }
 
+  @Get()
+  getAllObservaciones(@Query('estudiante_id') estudianteId?: string) {
+    return this.observadorService.getAllObservaciones(estudianteId);
+  }
+
   @Get('resumen/:id')
   getResumen(@Param('id') id: string) {
     return this.observadorService.getResumenEstudiante(id);
@@ -39,5 +44,12 @@ export class ObservadorController {
   @Roles('admin', 'rector', 'coordinador', 'acudiente')
   firmar(@Param('id') id: string) {
     return this.observadorService.firmarObservacion(id);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  delete(@Param('id') id: string) {
+    return this.observadorService.deleteObservacion(id);
   }
 }

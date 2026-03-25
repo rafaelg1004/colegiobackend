@@ -84,6 +84,16 @@ export class NominaService {
     return { message: 'Empleado actualizado', data };
   }
 
+  async deleteEmpleado(id: string) {
+    const { error } = await this.supabase.admin
+      .from('empleado')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Empleado eliminado' };
+  }
+
   // ======================
   // NÓMINA
   // ======================

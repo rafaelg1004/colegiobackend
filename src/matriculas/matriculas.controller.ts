@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { MatriculasService } from './matriculas.service';
 import { CreateMatriculaDto, UpdateMatriculaDto } from './dto/matricula.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,11 +25,23 @@ export class MatriculasController {
     return this.matriculasService.findAll(anioLectivoId, grupoId);
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.matriculasService.findOne(id);
+  }
+
   @Patch(':id')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector', 'coordinador', 'secretaria')
   update(@Param('id') id: string, @Body() dto: UpdateMatriculaDto) {
     return this.matriculasService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  remove(@Param('id') id: string) {
+    return this.matriculasService.remove(id);
   }
 
   @Post('masiva')

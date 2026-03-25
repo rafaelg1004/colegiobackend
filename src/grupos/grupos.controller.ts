@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Patch, Delete, UseGuards } from '@nestjs/common';
 import { GruposService } from './grupos.service';
 import { CreateGrupoDto } from './dto/grupo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,6 +25,25 @@ export class GruposController {
   @Get('grados')
   getGrados() {
     return this.gruposService.getGrados();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.gruposService.findOne(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador', 'secretaria')
+  update(@Param('id') id: string, @Body() dto: Partial<CreateGrupoDto>) {
+    return this.gruposService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  remove(@Param('id') id: string) {
+    return this.gruposService.remove(id);
   }
 
   @Get(':id/estudiantes')

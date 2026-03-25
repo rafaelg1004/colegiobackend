@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { FinancieroService } from './financiero.service';
 import {
   CreateConceptoDto, UpdateConceptoDto, CreateDescuentoDto,
@@ -31,6 +31,13 @@ export class FinancieroController {
   @Roles('admin', 'rector', 'secretaria')
   updateConcepto(@Param('id') id: string, @Body() dto: UpdateConceptoDto) {
     return this.finService.updateConcepto(id, dto);
+  }
+
+  @Delete('conceptos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteConcepto(@Param('id') id: string) {
+    return this.finService.deleteConcepto(id);
   }
 
   // --- Descuentos ---

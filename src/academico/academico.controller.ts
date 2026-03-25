@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, Patch, Delete, UseGuards } from '@nestjs/common';
 import { AcademicoService } from './academico.service';
-import { 
-  CreateSedeDto, CreateAnioLectivoDto, CreatePeriodoDto, 
-  CreateAreaDto, CreateAsignaturaDto, CreateAsignacionDocenteDto 
+import {
+  CreateSedeDto, CreateAnioLectivoDto, CreatePeriodoDto,
+  CreateAreaDto, CreateAsignaturaDto, CreateAsignacionDocenteDto
 } from './dto/academico.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -13,6 +13,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 export class AcademicoController {
   constructor(private readonly academicoService: AcademicoService) {}
 
+  // --- SEDES ---
   @Get('sedes')
   getSedes() {
     return this.academicoService.getSedes();
@@ -25,6 +26,21 @@ export class AcademicoController {
     return this.academicoService.crearSede(dto);
   }
 
+  @Patch('sedes/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  updateSede(@Param('id') id: string, @Body() dto: Partial<CreateSedeDto>) {
+    return this.academicoService.updateSede(id, dto);
+  }
+
+  @Delete('sedes/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteSede(@Param('id') id: string) {
+    return this.academicoService.deleteSede(id);
+  }
+
+  // --- AÑOS LECTIVOS ---
   @Get('anios-lectivos')
   getAnios() {
     return this.academicoService.getAniosLectivos();
@@ -37,6 +53,21 @@ export class AcademicoController {
     return this.academicoService.crearAnioLectivo(dto);
   }
 
+  @Patch('anios-lectivos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  updateAnio(@Param('id') id: string, @Body() dto: Partial<CreateAnioLectivoDto>) {
+    return this.academicoService.updateAnioLectivo(id, dto);
+  }
+
+  @Delete('anios-lectivos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteAnio(@Param('id') id: string) {
+    return this.academicoService.deleteAnioLectivo(id);
+  }
+
+  // --- PERIODOS ---
   @Get('periodos')
   getPeriodos(@Query('anio_lectivo_id') anioId: string) {
     return this.academicoService.getPeriodos(anioId);
@@ -49,6 +80,21 @@ export class AcademicoController {
     return this.academicoService.crearPeriodo(dto);
   }
 
+  @Patch('periodos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  updatePeriodo(@Param('id') id: string, @Body() dto: Partial<CreatePeriodoDto>) {
+    return this.academicoService.updatePeriodo(id, dto);
+  }
+
+  @Delete('periodos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deletePeriodo(@Param('id') id: string) {
+    return this.academicoService.deletePeriodo(id);
+  }
+
+  // --- ÁREAS ---
   @Get('areas')
   getAreas() {
     return this.academicoService.getAreas();
@@ -61,6 +107,26 @@ export class AcademicoController {
     return this.academicoService.crearArea(dto);
   }
 
+  @Patch('areas/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  updateArea(@Param('id') id: string, @Body() dto: Partial<CreateAreaDto>) {
+    return this.academicoService.updateArea(id, dto);
+  }
+
+  @Delete('areas/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteArea(@Param('id') id: string) {
+    return this.academicoService.deleteArea(id);
+  }
+
+  // --- ASIGNATURAS ---
+  @Get('asignaturas')
+  getAsignaturas() {
+    return this.academicoService.getAsignaturas();
+  }
+
   @Post('asignaturas')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector', 'coordinador')
@@ -68,6 +134,21 @@ export class AcademicoController {
     return this.academicoService.crearAsignatura(dto);
   }
 
+  @Patch('asignaturas/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  updateAsignatura(@Param('id') id: string, @Body() dto: Partial<CreateAsignaturaDto>) {
+    return this.academicoService.updateAsignatura(id, dto);
+  }
+
+  @Delete('asignaturas/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteAsignatura(@Param('id') id: string) {
+    return this.academicoService.deleteAsignatura(id);
+  }
+
+  // --- CARGA ACADÉMICA ---
   @Get('carga')
   getCarga(
     @Query('empleado_id') empleadoId?: string,

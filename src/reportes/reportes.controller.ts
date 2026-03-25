@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
 import { ReportesService } from './reportes.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -12,11 +12,22 @@ export class ReportesController {
   @Get('boletin/:estudianteId')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector', 'coordinador', 'secretaria', 'docente', 'acudiente')
-  getBoletin(
+  async getBoletin(
     @Param('estudianteId') estudianteId: string,
-    @Query('periodo_id') periodoId: string
+    @Query('periodo_id') periodoId?: string
   ) {
-    return this.reportesService.getDatosBoletin(estudianteId, periodoId);
+    try {
+      return await this.reportesService.getDatosBoletin(estudianteId, periodoId || undefined);
+    } catch (error) {
+      console.error('Error en getBoletin:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        error.message || 'Error al obtener el boletín',
+        HttpStatus.BAD_REQUEST
+      );
+    }
   }
 
   @Get('dashboard/stats')

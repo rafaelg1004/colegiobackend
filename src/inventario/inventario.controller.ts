@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { InventarioService } from './inventario.service';
 import { CreateArticuloDto, UpdateArticuloDto, CreateMovimientoDto, CreateEspacioDto } from './dto/inventario.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -18,6 +18,11 @@ export class InventarioController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector', 'secretaria')
   crearCategoria(@Body('nombre') nombre: string) { return this.invService.crearCategoria(nombre); }
+
+  @Delete('categorias/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteCategoria(@Param('id') id: string) { return this.invService.deleteCategoria(id); }
 
   // --- Artículos ---
   @Post('articulos')
@@ -40,6 +45,13 @@ export class InventarioController {
   @Roles('admin', 'rector', 'secretaria')
   updateArticulo(@Param('id') id: string, @Body() dto: UpdateArticuloDto) {
     return this.invService.updateArticulo(id, dto);
+  }
+
+  @Delete('articulos/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteArticulo(@Param('id') id: string) {
+    return this.invService.deleteArticulo(id);
   }
 
   // --- Movimientos ---
@@ -70,6 +82,11 @@ export class InventarioController {
 
   @Get('espacios')
   getEspacios(@Query('sede_id') sedeId?: string) { return this.invService.getEspacios(sedeId); }
+
+  @Delete('espacios/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteEspacio(@Param('id') id: string) { return this.invService.deleteEspacio(id); }
 
   // --- Resumen ---
   @Get('resumen')

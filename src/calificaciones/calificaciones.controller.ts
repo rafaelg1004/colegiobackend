@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { CalificacionesService } from './calificaciones.service';
 import { CreateActividadDto, RegistrarNotasDto, UpdateNotaDto } from './dto/calificacion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,6 +17,20 @@ export class CalificacionesController {
     return this.calService.crearActividad(dto);
   }
 
+  @Patch('actividades/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'coordinador', 'docente')
+  updateActividad(@Param('id') id: string, @Body() dto: Partial<CreateActividadDto>) {
+    return this.calService.updateActividad(id, dto);
+  }
+
+  @Delete('actividades/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'coordinador')
+  deleteActividad(@Param('id') id: string) {
+    return this.calService.deleteActividad(id);
+  }
+
   @Get('actividades')
   getActividades(
     @Query('grupo_id') grupoId: string,
@@ -24,6 +38,11 @@ export class CalificacionesController {
     @Query('asignatura_id') asignaturaId?: string,
   ) {
     return this.calService.getActividadesPorGrupo(grupoId, periodoId, asignaturaId);
+  }
+
+  @Get('actividades/:id')
+  getActividad(@Param('id') id: string) {
+    return this.calService.getActividad(id);
   }
 
   @Get('tipos-actividad')

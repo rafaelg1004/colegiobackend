@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Req, Patch, Delete, UseGuards } from '@nestjs/common';
 import { ComunicacionService } from './comunicacion.service';
 import { CreateCircularDto } from './dto/comunicacion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,5 +25,19 @@ export class ComunicacionController {
   @Get('circulares/:id')
   getCircular(@Param('id') id: string) {
     return this.comunicacionService.getCircular(id);
+  }
+
+  @Patch('circulares/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador', 'secretaria')
+  updateCircular(@Param('id') id: string, @Body() dto: Partial<CreateCircularDto>) {
+    return this.comunicacionService.updateCircular(id, dto);
+  }
+
+  @Delete('circulares/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  deleteCircular(@Param('id') id: string) {
+    return this.comunicacionService.deleteCircular(id);
   }
 }
