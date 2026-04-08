@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
+import { type Request, type Response } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,6 +13,12 @@ async function bootstrap() {
   // Fallback para diferentes estilos de exportación de cookie-parser
   const cookieParserMiddleware = (cookieParser as any).default || cookieParser;
   app.use(cookieParserMiddleware());
+
+  // Healthcheck sin prefijo - usar Express raw
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/health', (req: Request, res: Response) => {
+    res.status(200).send('OK');
+  });
 
   // Prefijo global para todas las rutas: /api/v1/...
   app.setGlobalPrefix('api/v1');

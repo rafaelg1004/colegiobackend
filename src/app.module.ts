@@ -20,6 +20,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { EvaluacionModule } from './evaluacion/evaluacion.module';
 import { ContabilidadModule } from './contabilidad/contabilidad.module';
 import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -44,5 +45,6 @@ import { AppController } from './app.controller';
     ContabilidadModule,
   ],
   controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
