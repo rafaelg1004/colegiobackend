@@ -10,7 +10,6 @@ import * as jose from 'jose';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  private jwks: jose.JWTVerifyGetKey | null = null;
   private jwksUri: string;
 
   constructor(
@@ -22,8 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('Falta la variable SUPABASE_URL en el .env');
     }
 
-    this.jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
-    console.log('🔐 JWT Strategy inicializada con JWKS:', this.jwksUri);
+    const jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
 
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -39,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       secretOrKeyProvider: async (req, rawToken, done) => {
         try {
           // Obtener las claves JWKS
-          const JWKS = jose.createRemoteJWKSet(new URL(this.jwksUri));
+          const JWKS = jose.createRemoteJWKSet(new URL(jwksUri));
 
           // Verificar el token
           const { payload } = await jose.jwtVerify(rawToken, JWKS, {
@@ -48,12 +46,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
           done(null, payload);
         } catch (err) {
-          done(err, null);
+          done(err, undefined);
         }
       },
       algorithms: ['ES256'],
       ignoreExpiration: false,
     });
+
+    // Ahora podemos usar this después de super()
+    this.jwksUri = jwksUri;
+    console.log('🔐 JWT Strategy inicializada con JWKS:', this.jwksUri);
   }
 
   async validate(payload: any) {
