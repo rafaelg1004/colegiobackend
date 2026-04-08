@@ -6,10 +6,13 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../supabase/supabase.service';
-import { passportJwtSecret } from 'jwks-rsa';
+import * as jose from 'jose';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private jwks: jose.JWTVerifyGetKey | null = null;
+  private jwksUri: string;
+
   constructor(
     configService: ConfigService,
     private supabase: SupabaseService,
@@ -19,8 +22,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('Falta la variable SUPABASE_URL en el .env');
     }
 
-    const jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
-    console.log('🔐 JWT Strategy inicializada con JWKS:', jwksUri);
+    this.jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
+    console.log('🔐 JWT Strategy inicializada con JWKS:', this.jwksUri);
 
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -33,12 +36,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           return token;
         },
       ]),
-      secretOrKeyProvider: passportJwtSecret({
-        jwksUri: jwksUri,
-        cache: true,
-        rateLimit: true,
-        jwksRequestsPerMinute: 5,
-      }),
+      secretOrKeyProvider: async (req, rawToken, done) => {
+        try {
+          // Obtener las claves JWKS
+          const JWKS = jose.createRemoteJWKSet(new URL(this.jwksUri));
+
+          // Verificar el token
+          const { payload } = await jose.jwtVerify(rawToken, JWKS, {
+            algorithms: ['ES256'],
+          });
+
+          done(null, payload);
+        } catch (err) {
+          done(err, null);
+        }
+      },
       algorithms: ['ES256'],
       ignoreExpiration: false,
     });
@@ -49,7 +61,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Debug: mostrar todo el payload
     console.log('🔑 JWT Full payload:', JSON.stringify(payload));
-    
+
     try {
       // Intentamos obtener el perfil, pero no dejamos que un error aquí bloquee al usuario
       // si el token JWT ya es válido por sí mismo.
@@ -84,7 +96,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       };
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      
+
       // Fallback: si falla Supabase, pero el JWT es válido, dejamos pasar con info básica
       console.error('💥 Error en validación de perfil (Fallback activo):', err.message);
       return {
