@@ -19,6 +19,7 @@ import { ComunicacionModule } from './comunicacion/comunicacion.module';
 import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { EvaluacionModule } from './evaluacion/evaluacion.module';
 import { ContabilidadModule } from './contabilidad/contabilidad.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -42,5 +43,6 @@ import { ContabilidadModule } from './contabilidad/contabilidad.module';
     EvaluacionModule,
     ContabilidadModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}
