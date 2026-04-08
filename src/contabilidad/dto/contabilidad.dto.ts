@@ -38,6 +38,9 @@ export class CreateMovimientoContableDto {
   @IsOptional() @IsString()
   descripcion?: string;
 
+  @IsOptional() @IsString()
+  fecha?: string;
+
   @IsOptional() @IsNumber()
   @Min(0)
   debe?: number;
