@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
 import { EstudiantesModule } from './estudiantes/estudiantes.module';
+import { EmpleadosModule } from './empleados/empleados.module';
 import { AcudientesModule } from './acudientes/acudientes.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
 import { CalificacionesModule } from './calificaciones/calificaciones.module';
@@ -29,6 +30,7 @@ import { AppService } from './app.service';
     SupabaseModule,
     AuthModule,
     EstudiantesModule,
+    EmpleadosModule,
     AcudientesModule,
     MatriculasModule,
     CalificacionesModule,
