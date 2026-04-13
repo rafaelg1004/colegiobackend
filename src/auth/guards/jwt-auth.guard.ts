@@ -7,11 +7,16 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SupabaseService } from '../../supabase/supabase.service';
+import { ConfigService } from '@nestjs/config';
+import { DatabaseService } from '../../database/database.service';
+import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private database: DatabaseService,
+    private config: ConfigService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -34,33 +39,30 @@ export class JwtAuthGuard implements CanActivate {
     const token = authHeader.substring(7);
 
     try {
-      // Verificar token usando Supabase Auth API
-      const {
-        data: { user },
-        error,
-      } = await this.supabase.admin.auth.getUser(token);
-
-      if (error || !user) {
-        console.error('❌ Token inválido según Supabase:', error?.message);
-        throw new UnauthorizedException('Token inválido o expirado');
-      }
+      // Verificar token JWT localmente
+      const secret = this.config.get<string>('JWT_SECRET') || 'fallback-secret';
+      const decoded = jwt.verify(token, secret) as {
+        sub: string;
+        email: string;
+        rol: string;
+      };
 
       // Obtener perfil del usuario
-      const { data: perfil, error: perfilError } = await this.supabase.admin
+      const { data: perfil, error: perfilError } = await this.database.admin
         .from('perfil_usuario')
         .select('rol, empleado_id, acudiente_id, estudiante_id, activo')
-        .eq('id', user.id)
+        .eq('id', decoded.sub)
         .single();
 
       if (perfilError) {
-        console.warn('⚠️ No se encontró perfil, usando datos básicos');
+        console.error('⚠️ No se encontró perfil para el usuario:', decoded.sub);
       }
 
       // Adjuntar usuario al request
       request.user = {
-        sub: user.id,
-        email: user.email,
-        rol: perfil?.rol || 'USUARIO',
+        sub: decoded.sub,
+        email: decoded.email,
+        rol: perfil?.rol || decoded.rol || 'USUARIO',
         empleado_id: perfil?.empleado_id,
         acudiente_id: perfil?.acudiente_id,
         estudiante_id: perfil?.estudiante_id,
@@ -68,8 +70,8 @@ export class JwtAuthGuard implements CanActivate {
       };
 
       console.log(
-        '✅ Usuario autenticado:',
-        request.user.email,
+        '✅ Usuario autenticado via JWT:',
+        decoded.email,
         'Rol:',
         request.user.rol,
       );

@@ -1,44 +1,25 @@
 // ================================================
 // src/supabase/supabase.service.ts
+// Wrapper que delega a DatabaseService (PostgreSQL nativo)
+// Mantiene compatibilidad con código existente
 // ================================================
 
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Injectable } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
 
 @Injectable()
-export class SupabaseService implements OnModuleInit {
-  private clientAdmin: SupabaseClient;
+export class SupabaseService {
+  constructor(private databaseService: DatabaseService) {}
 
-  constructor(private config: ConfigService) {}
-
-  onModuleInit() {
-    const url = this.config.get<string>('SUPABASE_URL');
-    const serviceKey = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!url || !serviceKey) {
-      throw new Error(
-        'Faltan variables SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en el .env',
-      );
-    }
-
-    this.clientAdmin = createClient(url, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+  // Delega al DatabaseService - mantiene compatibilidad con this.supabase.admin
+  get admin() {
+    return this.databaseService.admin;
   }
 
-  get admin(): SupabaseClient {
-    return this.clientAdmin;
-  }
-
-  getClientForUser(accessToken: string): SupabaseClient {
-    const url = this.config.get<string>('SUPABASE_URL')!;
-    const anonKey = this.config.get<string>('SUPABASE_ANON_KEY')!;
-
-    return createClient(url, anonKey, {
-      global: {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    });
+  // Método legacy - ahora usa PostgreSQL directamente
+  getClientForUser(_accessToken: string) {
+    // Con autenticación local, ya no necesitamos cliente por usuario
+    // Retornamos el admin para mantener compatibilidad
+    return this.databaseService.admin;
   }
 }
