@@ -1,6 +1,15 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { CreateEstudianteDto, UpdateEstudianteDto, QueryEstudianteDto } from './dto/estudiante.dto';
+import {
+  CreateEstudianteDto,
+  UpdateEstudianteDto,
+  QueryEstudianteDto,
+} from './dto/estudiante.dto';
 
 @Injectable()
 export class EstudiantesService {
@@ -14,7 +23,9 @@ export class EstudiantesService {
       .single();
 
     if (existe) {
-      throw new ConflictException('Ya existe un estudiante con ese número de documento');
+      throw new ConflictException(
+        'Ya existe un estudiante con ese número de documento',
+      );
     }
 
     const { data, error } = await this.supabase.admin
@@ -31,29 +42,78 @@ export class EstudiantesService {
     const page = parseInt(query.page || '1');
     const limit = parseInt(query.limit || '20');
     const from = (page - 1) * limit;
-    const to = from + limit - 1;
+    const dbQuery = this.supabase.admin.query;
 
-    let qb = this.supabase.admin
-      .from('estudiante')
-      .select('*, matricula(id, grupo:grupo_id(nombre, grado:grado_id(nombre, nivel:nivel_id(nombre))), anio_lectivo:anio_lectivo_id(anio, activo))', { count: 'exact' })
-      .order('primer_apellido', { ascending: true })
-      .range(from, to);
+    // Contar total
+    let countSql = 'SELECT COUNT(*) as count FROM estudiante e';
+    const countParams: any[] = [];
 
     if (query.estado) {
-      qb = qb.eq('estado', query.estado);
+      countSql += ' WHERE e.estado = $1';
+      countParams.push(query.estado);
     }
 
     if (query.buscar) {
-      qb = qb.or(
-        `primer_nombre.ilike.%${query.buscar}%,primer_apellido.ilike.%${query.buscar}%,numero_documento.ilike.%${query.buscar}%`,
-      );
+      countSql += query.estado ? ' AND' : ' WHERE';
+      countSql += ` (e.primer_nombre ILIKE $${countParams.length + 1} OR e.primer_apellido ILIKE $${countParams.length + 1} OR e.numero_documento ILIKE $${countParams.length + 1})`;
+      countParams.push(`%${query.buscar}%`);
     }
 
-    const { data, error, count } = await qb;
+    const { data: countResult } = await dbQuery(countSql, countParams);
+    const count = parseInt(countResult?.[0]?.count || '0');
+
+    // Obtener datos con matrícula
+    let sql = `
+      SELECT 
+        e.*,
+        (
+          SELECT json_build_object(
+            'id', m2.id,
+            'estado', m2.estado,
+            'fecha_matricula', m2.fecha_matricula,
+            'grupo', json_build_object(
+              'nombre', g2.nombre,
+              'jornada', g2.jornada,
+              'grado', json_build_object(
+                'nombre', gr2.nombre,
+                'nivel', json_build_object('nombre', n2.nombre)
+              )
+            ),
+            'anio_lectivo', json_build_object('anio', al2.anio, 'activo', al2.activo)
+          )
+          FROM matricula m2
+          LEFT JOIN grupo g2 ON m2.grupo_id = g2.id
+          LEFT JOIN grado gr2 ON g2.grado_id = gr2.id
+          LEFT JOIN nivel n2 ON gr2.nivel_id = n2.id
+          LEFT JOIN anio_lectivo al2 ON m2.anio_lectivo_id = al2.id
+          WHERE m2.estudiante_id = e.id
+          ORDER BY m2.fecha_matricula DESC
+          LIMIT 1
+        ) as matricula
+      FROM estudiante e
+    `;
+
+    const params: any[] = [];
+
+    if (query.estado) {
+      sql += ' WHERE e.estado = $1';
+      params.push(query.estado);
+    }
+
+    if (query.buscar) {
+      sql += query.estado ? ' AND' : ' WHERE';
+      sql += ` (e.primer_nombre ILIKE $${params.length + 1} OR e.primer_apellido ILIKE $${params.length + 1} OR e.numero_documento ILIKE $${params.length + 1})`;
+      params.push(`%${query.buscar}%`);
+    }
+
+    sql += ' ORDER BY e.primer_apellido ASC';
+    sql += ` LIMIT ${limit} OFFSET ${from}`;
+
+    const { data, error } = await dbQuery(sql, params);
     if (error) throw new BadRequestException(error.message);
 
     return {
-      data,
+      data: data || [],
       meta: {
         total: count,
         page,
@@ -64,25 +124,74 @@ export class EstudiantesService {
   }
 
   async findOne(id: string) {
-    const { data, error } = await this.supabase.admin
-      .from('estudiante')
-      .select(`
-        *,
-        matricula(
-          id, estado, fecha_matricula,
-          grupo:grupo_id(nombre, jornada, grado:grado_id(nombre, nivel:nivel_id(nombre))),
-          anio_lectivo:anio_lectivo_id(anio, activo)
-        ),
-        estudiante_acudiente(
-          es_principal,
-          acudiente:acudiente_id(id, primer_nombre, primer_apellido, celular, correo_electronico, parentesco)
-        )
-      `)
-      .eq('id', id)
-      .single();
+    const query = this.supabase.admin.query;
 
-    if (error || !data) throw new NotFoundException('Estudiante no encontrado');
-    return data;
+    const sql = `
+      SELECT 
+        e.*,
+        (
+          SELECT json_build_object(
+            'id', m2.id,
+            'estado', m2.estado,
+            'fecha_matricula', m2.fecha_matricula,
+            'grupo', json_build_object(
+              'nombre', g2.nombre,
+              'jornada', g2.jornada,
+              'grado', json_build_object(
+                'nombre', gr2.nombre,
+                'nivel', json_build_object('nombre', n2.nombre)
+              )
+            ),
+            'anio_lectivo', json_build_object('anio', al2.anio, 'activo', al2.activo)
+          )
+          FROM matricula m2
+          LEFT JOIN grupo g2 ON m2.grupo_id = g2.id
+          LEFT JOIN grado gr2 ON g2.grado_id = gr2.id
+          LEFT JOIN nivel n2 ON gr2.nivel_id = n2.id
+          LEFT JOIN anio_lectivo al2 ON m2.anio_lectivo_id = al2.id
+          WHERE m2.estudiante_id = e.id
+          ORDER BY m2.fecha_matricula DESC
+          LIMIT 1
+        ) as matricula,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'es_principal', eac.es_principal,
+              'acudiente', json_build_object(
+                'id', ac.id,
+                'primer_nombre', ac.primer_nombre,
+                'primer_apellido', ac.primer_apellido,
+                'celular', ac.celular,
+                'correo_electronico', ac.correo_electronico,
+                'parentesco', ac.parentesco
+              )
+            )
+          ) FILTER (WHERE ac.id IS NOT NULL),
+          '[]'
+        ) as estudiante_acudiente
+      FROM estudiante e
+      LEFT JOIN estudiante_acudiente eac ON e.id = eac.estudiante_id
+      LEFT JOIN acudiente ac ON eac.acudiente_id = ac.id
+      WHERE e.id = $1
+      GROUP BY e.id
+    `;
+
+    const { data, error } = await query(sql, [id]);
+    if (error) throw new BadRequestException(error.message);
+    if (!data || data.length === 0)
+      throw new NotFoundException('Estudiante no encontrado');
+
+    // Convertir matricula de array a objeto si es necesario
+    if (Array.isArray(data[0].matricula) && data[0].matricula.length > 0) {
+      data[0].matricula = data[0].matricula[0];
+    } else if (
+      Array.isArray(data[0].matricula) &&
+      data[0].matricula.length === 0
+    ) {
+      data[0].matricula = null;
+    }
+
+    return data[0];
   }
 
   async update(id: string, dto: UpdateEstudianteDto) {
@@ -108,7 +217,11 @@ export class EstudiantesService {
     return { message: 'Estudiante eliminado' };
   }
 
-  async vincularAcudiente(estudianteId: string, acudienteId: string, esPrincipal = false) {
+  async vincularAcudiente(
+    estudianteId: string,
+    acudienteId: string,
+    esPrincipal = false,
+  ) {
     const { data, error } = await this.supabase.admin
       .from('estudiante_acudiente')
       .insert({
@@ -121,7 +234,9 @@ export class EstudiantesService {
 
     if (error) {
       if (error.message.includes('duplicate')) {
-        throw new ConflictException('Este acudiente ya está vinculado al estudiante');
+        throw new ConflictException(
+          'Este acudiente ya está vinculado al estudiante',
+        );
       }
       throw new BadRequestException(error.message);
     }

@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateMatriculaDto, UpdateMatriculaDto } from './dto/matricula.dto';
 
@@ -15,7 +20,9 @@ export class MatriculasService {
       .single();
 
     if (existe) {
-      throw new ConflictException('El estudiante ya tiene matrícula para este año lectivo');
+      throw new ConflictException(
+        'El estudiante ya tiene matrícula para este año lectivo',
+      );
     }
 
     const { data: grupo } = await this.supabase.admin
@@ -34,48 +41,119 @@ export class MatriculasService {
       throw new BadRequestException('El grupo ya alcanzó el cupo máximo');
     }
 
-    const { data, error } = await this.supabase.admin
-      .from('matricula')
-      .insert(dto)
-      .select(`
-        *,
-        estudiante:estudiante_id(primer_nombre, primer_apellido, numero_documento),
-        grupo:grupo_id(nombre, grado:grado_id(nombre)),
-        anio_lectivo:anio_lectivo_id(anio)
-      `)
-      .single();
+    const query = this.supabase.admin.query;
 
-    if (error) throw new BadRequestException(error.message);
-    return { message: 'Matrícula creada exitosamente', data };
+    // Insertar matrícula
+    const insertQuery = `
+      INSERT INTO matricula (
+        estudiante_id, grupo_id, anio_lectivo_id, fecha_matricula, estado, observaciones
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `;
+    const insertParams = [
+      dto.estudiante_id,
+      dto.grupo_id,
+      dto.anio_lectivo_id,
+      new Date().toISOString(), // fecha_matricula por defecto
+      'Activa', // estado por defecto
+      dto.observaciones || null,
+    ];
+
+    const { data: newMatricula, error: insertError } = await query(
+      insertQuery,
+      insertParams,
+    );
+    if (insertError) throw new BadRequestException(insertError.message);
+
+    // Obtener datos relacionados
+    const matriculaId = newMatricula?.[0]?.id;
+    const { data: fullData, error: selectError } = await query(
+      `
+      SELECT 
+        m.*,
+        json_build_object(
+          'id', e.id,
+          'primer_nombre', e.primer_nombre,
+          'primer_apellido', e.primer_apellido,
+          'numero_documento', e.numero_documento
+        ) as estudiante,
+        json_build_object(
+          'id', g.id,
+          'nombre', g.nombre,
+          'grado', json_build_object('nombre', gr.nombre)
+        ) as grupo,
+        json_build_object('id', al.id, 'anio', al.anio) as anio_lectivo
+      FROM matricula m
+      LEFT JOIN estudiante e ON m.estudiante_id = e.id
+      LEFT JOIN grupo g ON m.grupo_id = g.id
+      LEFT JOIN grado gr ON g.grado_id = gr.id
+      LEFT JOIN anio_lectivo al ON m.anio_lectivo_id = al.id
+      WHERE m.id = $1
+    `,
+      [matriculaId],
+    );
+
+    if (selectError) throw new BadRequestException(selectError.message);
+    return { message: 'Matrícula creada exitosamente', data: fullData?.[0] };
   }
 
   async findAll(anioLectivoId?: string, grupoId?: string) {
+    const query = this.supabase.admin.query;
+
     // Si no se pasa año lectivo, obtener el activo
     let anioId = anioLectivoId;
     if (!anioId) {
-      const { data: anioActivo } = await this.supabase.admin
-        .from('anio_lectivo')
-        .select('id')
-        .eq('activo', true)
-        .single();
-      anioId = anioActivo?.id;
+      const { data: anioActivo } = await query(
+        'SELECT id FROM anio_lectivo WHERE activo = true LIMIT 1',
+      );
+      anioId = anioActivo?.[0]?.id;
     }
 
-    let qb = this.supabase.admin
-      .from('matricula')
-      .select(`
-        *,
-        estudiante:estudiante_id(id, primer_nombre, primer_apellido, numero_documento),
-        grupo:grupo_id(id, nombre, grado:grado_id(nombre)),
-        anio_lectivo:anio_lectivo_id(id, anio, activo)
-      `)
-      .order('fecha_matricula', { ascending: false });
+    let sql = `
+      SELECT 
+        m.*,
+        json_build_object(
+          'id', e.id,
+          'primer_nombre', e.primer_nombre,
+          'primer_apellido', e.primer_apellido,
+          'numero_documento', e.numero_documento
+        ) as estudiante,
+        json_build_object(
+          'id', g.id,
+          'nombre', g.nombre,
+          'grado', json_build_object('nombre', gr.nombre)
+        ) as grupo,
+        json_build_object(
+          'id', al.id,
+          'anio', al.anio,
+          'activo', al.activo
+        ) as anio_lectivo
+      FROM matricula m
+      LEFT JOIN estudiante e ON m.estudiante_id = e.id
+      LEFT JOIN grupo g ON m.grupo_id = g.id
+      LEFT JOIN grado gr ON g.grado_id = gr.id
+      LEFT JOIN anio_lectivo al ON m.anio_lectivo_id = al.id
+    `;
 
+    const conditions: string[] = [];
+    const params: any[] = [];
 
-    if (anioId) qb = qb.eq('anio_lectivo_id', anioId);
-    if (grupoId) qb = qb.eq('grupo_id', grupoId);
+    if (anioId) {
+      conditions.push(`m.anio_lectivo_id = $${params.length + 1}`);
+      params.push(anioId);
+    }
+    if (grupoId) {
+      conditions.push(`m.grupo_id = $${params.length + 1}`);
+      params.push(grupoId);
+    }
 
-    const { data, error } = await qb;
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    sql += ` ORDER BY m.fecha_matricula DESC`;
+
+    const { data, error } = await query(sql, params);
     if (error) {
       console.error('❌ Error en findAll matriculas:', error);
       throw new BadRequestException(error.message);
@@ -98,7 +176,9 @@ export class MatriculasService {
         .eq('estado', 'Activa');
 
       if (grupo && (count ?? 0) >= grupo.cupo_maximo) {
-        throw new BadRequestException('El grupo destino ya alcanzó el cupo máximo');
+        throw new BadRequestException(
+          'El grupo destino ya alcanzó el cupo máximo',
+        );
       }
     }
 
@@ -117,12 +197,14 @@ export class MatriculasService {
   async findOne(id: string) {
     const { data, error } = await this.supabase.admin
       .from('matricula')
-      .select(`
+      .select(
+        `
         *,
         estudiante:estudiante_id(*),
         grupo:grupo_id(*, grado:grado_id(nombre, nivel:nivel_id(nombre))),
         anio_lectivo:anio_lectivo_id(anio, activo)
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
@@ -140,7 +222,11 @@ export class MatriculasService {
     return { message: 'Matrícula eliminada' };
   }
 
-  async matriculaMasiva(estudianteIds: string[], grupoId: string, anioLectivoId: string) {
+  async matriculaMasiva(
+    estudianteIds: string[],
+    grupoId: string,
+    anioLectivoId: string,
+  ) {
     const registros = estudianteIds.map((eid) => ({
       estudiante_id: eid,
       grupo_id: grupoId,

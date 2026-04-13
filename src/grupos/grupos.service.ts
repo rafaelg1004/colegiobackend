@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateGrupoDto } from './dto/grupo.dto';
 
@@ -9,12 +13,14 @@ export class GruposService {
   async findOne(id: string) {
     const { data, error } = await this.supabase.admin
       .from('grupo')
-      .select(`
+      .select(
+        `
         *,
         grado:grado_id(nombre, orden, nivel:nivel_id(nombre)),
         anio_lectivo:anio_lectivo_id(anio, activo),
         sede:sede_id(nombre)
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
@@ -43,7 +49,9 @@ export class GruposService {
       .eq('estado', 'Activa');
 
     if (matriculas && matriculas.length > 0) {
-      throw new BadRequestException('No se puede eliminar un grupo con matrículas activas');
+      throw new BadRequestException(
+        'No se puede eliminar un grupo con matrículas activas',
+      );
     }
 
     const { error } = await this.supabase.admin
@@ -67,30 +75,42 @@ export class GruposService {
   }
 
   async findAll(anioLectivoId?: string) {
-    let qb = this.supabase.admin
-      .from('grupo')
-      .select(`
-        *,
-        grado:grado_id(nombre, orden, nivel:nivel_id(nombre)),
-        anio_lectivo:anio_lectivo_id(anio, activo),
-        sede:sede_id(nombre)
-      `)
-      .order('grado_id');
+    const query = this.supabase.admin.query;
 
-    if (anioLectivoId) qb = qb.eq('anio_lectivo_id', anioLectivoId);
+    let sql = `
+      SELECT 
+        g.*,
+        json_build_object('nombre', gr.nombre, 'orden', gr.orden) as grado,
+        json_build_object('anio', al.anio, 'activo', al.activo) as anio_lectivo,
+        json_build_object('nombre', s.nombre) as sede
+      FROM grupo g
+      LEFT JOIN grado gr ON g.grado_id = gr.id
+      LEFT JOIN anio_lectivo al ON g.anio_lectivo_id = al.id
+      LEFT JOIN sede s ON g.sede_id = s.id
+    `;
 
-    const { data, error } = await qb;
+    const params: any[] = [];
+    if (anioLectivoId) {
+      sql += ` WHERE g.anio_lectivo_id = $1`;
+      params.push(anioLectivoId);
+    }
+
+    sql += ` ORDER BY g.grado_id`;
+
+    const { data, error } = await query(sql, params);
     if (error) throw new BadRequestException(error.message);
-    return data;
+    return data || [];
   }
 
   async getEstudiantesDelGrupo(grupoId: string) {
     const { data, error } = await this.supabase.admin
       .from('matricula')
-      .select(`
+      .select(
+        `
         id, estado,
         estudiante:estudiante_id(id, primer_nombre, primer_apellido, numero_documento, genero, foto_perfil_url)
-      `)
+      `,
+      )
       .eq('grupo_id', grupoId)
       .eq('estado', 'Activa');
 
