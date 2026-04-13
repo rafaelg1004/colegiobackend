@@ -330,9 +330,26 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const user = this.config.get<string>('DB_USER');
     const password = this.config.get<string>('DB_PASSWORD');
 
+    // Debug: mostrar todas las variables de entorno
+    console.log('🔧 Variables de entorno cargadas:');
+    console.log('   DB_HOST:', host || '❌ NO DEFINIDO');
+    console.log('   DB_PORT:', port || '❌ NO DEFINIDO');
+    console.log('   DB_NAME:', database || '❌ NO DEFINIDO');
+    console.log('   DB_USER:', user || '❌ NO DEFINIDO');
+    console.log(
+      '   DB_PASSWORD:',
+      password
+        ? '✅ DEFINIDO (' + password.length + ' chars)'
+        : '❌ NO DEFINIDO',
+    );
+    console.log(
+      '   JWT_SECRET:',
+      this.config.get<string>('JWT_SECRET') || '❌ NO DEFINIDO',
+    );
+
     if (!host || !database || !user || !password) {
       throw new Error(
-        'Faltan variables de conexión PostgreSQL en el .env (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)',
+        `Faltan variables de conexión PostgreSQL: DB_HOST=${host}, DB_NAME=${database}, DB_USER=${user}, DB_PASSWORD=${password ? 'OK' : 'FALTA'}`,
       );
     }
 
