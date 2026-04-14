@@ -58,6 +58,7 @@ export class AcademicoService {
       .select('*')
       .order('anio', { ascending: false });
     if (error) throw new BadRequestException(error.message);
+    console.log('📅 Años lectivos:', data);
     return data;
   }
 
