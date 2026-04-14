@@ -80,11 +80,12 @@ export class GruposService {
     let sql = `
       SELECT 
         g.*,
-        json_build_object('nombre', gr.nombre, 'orden', gr.orden) as grado,
+        json_build_object('nombre', gr.nombre, 'orden', gr.orden, 'nivel', json_build_object('nombre', n.nombre)) as grado,
         json_build_object('anio', al.anio, 'activo', al.activo) as anio_lectivo,
         json_build_object('nombre', s.nombre) as sede
       FROM grupo g
       LEFT JOIN grado gr ON g.grado_id = gr.id
+      LEFT JOIN nivel n ON gr.nivel_id = n.id
       LEFT JOIN anio_lectivo al ON g.anio_lectivo_id = al.id
       LEFT JOIN sede s ON g.sede_id = s.id
     `;
@@ -105,12 +106,7 @@ export class GruposService {
   async getEstudiantesDelGrupo(grupoId: string) {
     const { data, error } = await this.supabase.admin
       .from('matricula')
-      .select(
-        `
-        id, estado,
-        estudiante:estudiante_id(id, primer_nombre, primer_apellido, numero_documento, genero, foto_perfil_url)
-      `,
-      )
+      .select('*')
       .eq('grupo_id', grupoId)
       .eq('estado', 'Activa');
 
