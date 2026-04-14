@@ -1,18 +1,33 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsBoolean, Min, Max, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsUUID,
+  IsNumber,
+  IsBoolean,
+  Min,
+  Max,
+  IsDateString,
+} from 'class-validator';
 
 export class CreateSedeDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   nombre: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   direccion?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   telefono?: string;
 }
 
 export class CreateAnioLectivoDto {
-  @IsNumber() @Min(2000) @Max(2100)
+  @IsNumber()
+  @Min(2000)
+  @Max(2100)
   anio: number;
 
   @IsDateString()
@@ -21,18 +36,24 @@ export class CreateAnioLectivoDto {
   @IsDateString()
   fecha_fin: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   activo?: boolean;
 }
 
 export class CreatePeriodoDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   nombre: string;
 
-  @IsNumber() @Min(1) @Max(5)
+  @IsNumber()
+  @Min(1)
+  @Max(5)
   numero: number;
 
-  @IsNumber() @Min(0) @Max(100)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
   porcentaje_peso: number;
 
   @IsUUID()
@@ -46,12 +67,14 @@ export class CreatePeriodoDto {
 }
 
 export class CreateAreaDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   nombre: string;
 }
 
 export class CreateAsignaturaDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   nombre: string;
 
   @IsUUID()
@@ -68,6 +91,58 @@ export class CreateAsignacionDocenteDto {
   @IsUUID()
   grupo_id: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   es_director_grupo?: boolean;
+}
+
+// --- NIVELES ---
+export class CreateNivelDto {
+  @IsString()
+  @IsNotEmpty()
+  nombre: string;
+}
+
+// --- GRADOS ---
+export class CreateGradoDto {
+  @IsString()
+  @IsNotEmpty()
+  nombre: string;
+
+  @IsOptional()
+  @IsString()
+  codigo?: string;
+
+  @IsNumber()
+  @Min(1)
+  @Max(11)
+  orden: number;
+
+  @IsUUID()
+  nivel_id: string;
+}
+
+export class UpdateGradoDto {
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+
+  @IsOptional()
+  @IsString()
+  codigo?: string;
+
+  @IsOptional()
+  @IsNumber()
+  orden?: number;
+
+  @IsOptional()
+  @IsUUID()
+  nivel_id?: string;
+}
+
+// --- TIPOS DE ACTIVIDAD ---
+export class CreateTipoActividadDto {
+  @IsString()
+  @IsNotEmpty()
+  nombre: string;
 }

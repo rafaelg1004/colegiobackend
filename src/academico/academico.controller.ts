@@ -1,8 +1,26 @@
-import { Controller, Get, Post, Body, Query, Param, Patch, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+} from '@nestjs/common';
 import { AcademicoService } from './academico.service';
 import {
-  CreateSedeDto, CreateAnioLectivoDto, CreatePeriodoDto,
-  CreateAreaDto, CreateAsignaturaDto, CreateAsignacionDocenteDto
+  CreateSedeDto,
+  CreateAnioLectivoDto,
+  CreatePeriodoDto,
+  CreateAreaDto,
+  CreateAsignaturaDto,
+  CreateAsignacionDocenteDto,
+  CreateNivelDto,
+  CreateGradoDto,
+  UpdateGradoDto,
+  CreateTipoActividadDto,
 } from './dto/academico.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -56,7 +74,10 @@ export class AcademicoController {
   @Patch('anios-lectivos/:id')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector')
-  updateAnio(@Param('id') id: string, @Body() dto: Partial<CreateAnioLectivoDto>) {
+  updateAnio(
+    @Param('id') id: string,
+    @Body() dto: Partial<CreateAnioLectivoDto>,
+  ) {
     return this.academicoService.updateAnioLectivo(id, dto);
   }
 
@@ -83,7 +104,10 @@ export class AcademicoController {
   @Patch('periodos/:id')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector')
-  updatePeriodo(@Param('id') id: string, @Body() dto: Partial<CreatePeriodoDto>) {
+  updatePeriodo(
+    @Param('id') id: string,
+    @Body() dto: Partial<CreatePeriodoDto>,
+  ) {
     return this.academicoService.updatePeriodo(id, dto);
   }
 
@@ -137,7 +161,10 @@ export class AcademicoController {
   @Patch('asignaturas/:id')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector', 'coordinador')
-  updateAsignatura(@Param('id') id: string, @Body() dto: Partial<CreateAsignaturaDto>) {
+  updateAsignatura(
+    @Param('id') id: string,
+    @Body() dto: Partial<CreateAsignaturaDto>,
+  ) {
     return this.academicoService.updateAsignatura(id, dto);
   }
 
@@ -154,7 +181,10 @@ export class AcademicoController {
     @Query('empleado_id') empleadoId?: string,
     @Query('grupo_id') grupoId?: string,
   ) {
-    return this.academicoService.getCargaAcademica({ empleado_id: empleadoId, grupo_id: grupoId });
+    return this.academicoService.getCargaAcademica({
+      empleado_id: empleadoId,
+      grupo_id: grupoId,
+    });
   }
 
   @Post('asignar-docente')
@@ -162,5 +192,65 @@ export class AcademicoController {
   @Roles('admin', 'rector', 'coordinador')
   asignarDocente(@Body() dto: CreateAsignacionDocenteDto) {
     return this.academicoService.asignarDocente(dto);
+  }
+
+  // --- NIVELES ---
+  @Get('niveles')
+  getNiveles() {
+    return this.academicoService.getNiveles();
+  }
+
+  @Post('niveles')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  crearNivel(@Body() dto: CreateNivelDto) {
+    return this.academicoService.crearNivel(dto);
+  }
+
+  // --- GRADOS ---
+  @Get('grados')
+  getGrados(@Query('nivel_id') nivelId?: string) {
+    return this.academicoService.getGrados(nivelId);
+  }
+
+  @Post('grados')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  crearGrado(@Body() dto: CreateGradoDto) {
+    return this.academicoService.crearGrado(dto);
+  }
+
+  @Patch('grados/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  updateGrado(@Param('id') id: string, @Body() dto: UpdateGradoDto) {
+    return this.academicoService.updateGrado(id, dto);
+  }
+
+  @Delete('grados/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteGrado(@Param('id') id: string) {
+    return this.academicoService.deleteGrado(id);
+  }
+
+  // --- TIPOS DE ACTIVIDAD ---
+  @Get('tipos-actividad')
+  getTiposActividad() {
+    return this.academicoService.getTiposActividad();
+  }
+
+  @Post('tipos-actividad')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador')
+  crearTipoActividad(@Body() dto: CreateTipoActividadDto) {
+    return this.academicoService.crearTipoActividad(dto);
+  }
+
+  @Delete('tipos-actividad/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteTipoActividad(@Param('id') id: string) {
+    return this.academicoService.deleteTipoActividad(id);
   }
 }

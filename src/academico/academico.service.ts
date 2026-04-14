@@ -11,6 +11,10 @@ import {
   CreateAreaDto,
   CreateAsignaturaDto,
   CreateAsignacionDocenteDto,
+  CreateNivelDto,
+  CreateGradoDto,
+  UpdateGradoDto,
+  CreateTipoActividadDto,
 } from './dto/academico.dto';
 
 @Injectable()
@@ -256,5 +260,96 @@ export class AcademicoService {
     const { data, error } = await qb;
     if (error) throw new BadRequestException(error.message);
     return data;
+  }
+
+  // --- NIVELES ---
+  async getNiveles() {
+    const { data, error } = await this.supabase.admin
+      .from('nivel')
+      .select('*')
+      .order('nombre');
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async crearNivel(dto: CreateNivelDto) {
+    const { data, error } = await this.supabase.admin
+      .from('nivel')
+      .insert(dto)
+      .select()
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  // --- GRADOS ---
+  async getGrados(nivelId?: string) {
+    let qb = this.supabase.admin
+      .from('grado')
+      .select('*, nivel:nivel_id(nombre)')
+      .order('orden');
+    if (nivelId) qb = qb.eq('nivel_id', nivelId);
+    const { data, error } = await qb;
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async crearGrado(dto: CreateGradoDto) {
+    const { data, error } = await this.supabase.admin
+      .from('grado')
+      .insert(dto)
+      .select()
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async updateGrado(id: string, dto: Partial<CreateGradoDto>) {
+    const { data, error } = await this.supabase.admin
+      .from('grado')
+      .update(dto)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Grado actualizado', data };
+  }
+
+  async deleteGrado(id: string) {
+    const { error } = await this.supabase.admin
+      .from('grado')
+      .delete()
+      .eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Grado eliminado' };
+  }
+
+  // --- TIPOS DE ACTIVIDAD ---
+  async getTiposActividad() {
+    const { data, error } = await this.supabase.admin
+      .from('tipo_actividad')
+      .select('*')
+      .order('nombre');
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async crearTipoActividad(dto: CreateTipoActividadDto) {
+    const { data, error } = await this.supabase.admin
+      .from('tipo_actividad')
+      .insert(dto)
+      .select()
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async deleteTipoActividad(id: string) {
+    const { error } = await this.supabase.admin
+      .from('tipo_actividad')
+      .delete()
+      .eq('id', id);
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Tipo de actividad eliminado' };
   }
 }
