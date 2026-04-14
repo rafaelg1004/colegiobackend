@@ -454,4 +454,379 @@ export class CajaService {
       egresos: CONCEPTOS_EGRESO,
     };
   }
+
+  // ======================
+  // FACTURACIÓN
+  // ======================
+
+  async getFacturas(filtros: {
+    acudiente_id?: string;
+    estudiante_id?: string;
+    estado?: string;
+    fecha_desde?: string;
+    fecha_hasta?: string;
+  }) {
+    let query = this.supabase.admin
+      .from('factura')
+      .select('*')
+      .order('fecha_emision', { ascending: false });
+
+    if (filtros.acudiente_id)
+      query = query.eq('acudiente_id', filtros.acudiente_id);
+    if (filtros.estudiante_id)
+      query = query.eq('estudiante_id', filtros.estudiante_id);
+    if (filtros.estado) query = query.eq('estado', filtros.estado);
+    if (filtros.fecha_desde)
+      query = query.gte('fecha_emision', filtros.fecha_desde);
+    if (filtros.fecha_hasta)
+      query = query.lte('fecha_emision', filtros.fecha_hasta);
+
+    const { data, error } = await query;
+    if (error) throw new BadRequestException(error.message);
+    return data || [];
+  }
+
+  async getFacturaById(id: string) {
+    const { data, error } = await this.supabase.admin
+      .from('factura')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    if (!data) throw new NotFoundException('Factura no encontrada');
+    return data;
+  }
+
+  async crearFactura(dto: any, usuarioId?: string) {
+    const prefijo = dto.prefijo || 'FAC';
+    const numeroFactura = await this.generarNumeroFactura(prefijo);
+
+    let subtotal = 0;
+    let ivaTotal = 0;
+
+    for (const detalle of dto.detalles) {
+      const subtotalLinea = detalle.cantidad * detalle.valor_unitario;
+      subtotal += subtotalLinea;
+      ivaTotal += detalle.cantidad * detalle.valor_iva;
+    }
+
+    const total = subtotal + ivaTotal;
+
+    const { data: factura, error: errorFactura } = await this.supabase.admin
+      .from('factura')
+      .insert({
+        prefijo,
+        numero_factura: numeroFactura,
+        fecha_emision:
+          dto.fecha_emision || new Date().toISOString().split('T')[0],
+        fecha_vencimiento: dto.fecha_vencimiento,
+        subtotal,
+        descuento_total: 0,
+        iva_total: ivaTotal,
+        total,
+        estado: 'PENDIENTE',
+        acudiente_id: dto.acudiente_id,
+        estudiante_id: dto.estudiante_id,
+        anio_lectivo_id: dto.anio_lectivo_id,
+        observaciones: dto.observaciones,
+      })
+      .select()
+      .single();
+
+    if (errorFactura) throw new BadRequestException(errorFactura.message);
+
+    const detallesInsert = dto.detalles.map((detalle: any) => ({
+      factura_id: factura.id,
+      cantidad: detalle.cantidad,
+      valor_unitario: detalle.valor_unitario,
+      valor_iva: detalle.valor_iva,
+      subtotal: detalle.cantidad * detalle.valor_unitario,
+      concepto_cobro_id: detalle.concepto_cobro_id,
+      articulo_inventario_id: detalle.articulo_inventario_id,
+      descripcion: detalle.descripcion,
+    }));
+
+    const { error: errorDetalles } = await this.supabase.admin
+      .from('factura_detalle')
+      .insert(detallesInsert);
+
+    if (errorDetalles) {
+      await this.supabase.admin.from('factura').delete().eq('id', factura.id);
+      throw new BadRequestException(errorDetalles.message);
+    }
+
+    return {
+      message: 'Factura creada',
+      data: await this.getFacturaById(factura.id),
+    };
+  }
+
+  async anularFactura(id: string) {
+    const { data, error } = await this.supabase.admin
+      .from('factura')
+      .update({ estado: 'ANULADA' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    if (!data) throw new NotFoundException('Factura no encontrada');
+    return { message: 'Factura anulada', data };
+  }
+
+  async pagarFactura(id: string, montoPagado: number) {
+    const factura = await this.getFacturaById(id);
+
+    if (factura.estado === 'ANULADA') {
+      throw new BadRequestException('No se puede pagar una factura anulada');
+    }
+    if (factura.estado === 'PAGADA') {
+      throw new BadRequestException('La factura ya está pagada');
+    }
+
+    const nuevoEstado = montoPagado >= factura.total ? 'PAGADA' : 'PARCIAL';
+
+    const { data, error } = await this.supabase.admin
+      .from('factura')
+      .update({
+        estado: nuevoEstado,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Factura actualizada', data };
+  }
+
+  private async generarNumeroFactura(prefijo: string): Promise<string> {
+    const { data } = await this.supabase.admin
+      .from('factura')
+      .select('numero_factura')
+      .ilike('numero_factura', `${prefijo}-%`)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    let siguienteNumero = 1;
+    if (data && data.length > 0) {
+      const ultimo = data[0].numero_factura;
+      const match = ultimo.match(/-(\d+)$/);
+      if (match) {
+        siguienteNumero = parseInt(match[1]) + 1;
+      }
+    }
+
+    return `${prefijo}-${siguienteNumero.toString().padStart(6, '0')}`;
+  }
+
+  // ======================
+  // TRANSACCIÓN UNIFICADA - PARTIDA DOBLE
+  // ======================
+
+  async crearTransaccion(
+    dto: {
+      tipo: 'INGRESO' | 'EGRESO';
+      estudiante_id?: string;
+      estudiante_nombre?: string;
+      conceptos?: Array<{
+        concepto_cobro_id?: string;
+        articulo_inventario_id?: string;
+        descripcion: string;
+        cantidad: number;
+        valor_unitario: number;
+        valor_iva: number;
+      }>;
+      observaciones?: string;
+      metodo_pago?: string;
+    },
+    usuarioId?: string,
+  ) {
+    console.log('=== crearTransaccion llamado ===');
+    console.log('DTO:', JSON.stringify(dto, null, 2));
+
+    // Calcular totales
+    let subtotal = 0;
+    let ivaTotal = 0;
+    if (dto.conceptos && dto.conceptos.length > 0) {
+      for (const c of dto.conceptos) {
+        subtotal += c.cantidad * c.valor_unitario;
+        ivaTotal += c.cantidad * c.valor_iva;
+      }
+    }
+    const total = subtotal + ivaTotal;
+
+    let factura: any = null;
+    let facturaId: string | null = null;
+
+    // ===== INGRESO: Crear FACTURA + MOVIMIENTO =====
+    if (dto.tipo === 'INGRESO' && dto.conceptos && dto.conceptos.length > 0) {
+      // 1. Crear FACTURA
+      const prefijo = 'FAC';
+      const numeroFactura = await this.generarNumeroFactura(prefijo);
+
+      const { data: facturaCreada, error: errorFactura } =
+        await this.supabase.admin
+          .from('factura')
+          .insert({
+            prefijo,
+            numero_factura: numeroFactura,
+            fecha_emision: new Date().toISOString().split('T')[0],
+            subtotal,
+            descuento_total: 0,
+            iva_total: ivaTotal,
+            total,
+            estado: 'Emitida', // Estado inicial para factura nueva
+            acudiente_id: dto.estudiante_id,
+            estudiante_id: dto.estudiante_id,
+            observaciones: dto.observaciones,
+          })
+          .select()
+          .single();
+
+      if (errorFactura) throw new BadRequestException(errorFactura.message);
+      factura = facturaCreada;
+      facturaId = facturaCreada.id;
+
+      // 2. Crear DETALLES de factura
+      const detallesInsert = dto.conceptos.map((c) => ({
+        factura_id: facturaId,
+        cantidad: c.cantidad,
+        valor_unitario: c.valor_unitario,
+        valor_iva: c.valor_iva,
+        subtotal: c.cantidad * c.valor_unitario,
+        concepto_cobro_id: c.concepto_cobro_id,
+        descripcion: c.descripcion,
+      }));
+
+      const { error: errorDetalles } = await this.supabase.admin
+        .from('factura_detalle')
+        .insert(detallesInsert);
+
+      if (errorDetalles) {
+        // Rollback: eliminar factura
+        await this.supabase.admin.from('factura').delete().eq('id', facturaId);
+        throw new BadRequestException(errorDetalles.message);
+      }
+    }
+
+    // 3. Crear MOVIMIENTO DE CAJA (para ambos: INGRESO y EGRESO)
+    const numeroComprobante = await this.generarNumeroComprobante();
+
+    const query = this.supabase.admin.query;
+    const sql = `
+      INSERT INTO movimiento_caja (
+        tipo,
+        concepto,
+        monto,
+        fecha,
+        observacion,
+        estudiante_id,
+        estudiante_nombre,
+        numero_comprobante,
+        registrado_por,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      RETURNING *
+    `;
+
+    const params = [
+      dto.tipo,
+      factura && (factura as any).numero_factura
+        ? `Factura ${(factura as any).numero_factura}`
+        : dto.conceptos?.[0]?.descripcion || 'Movimiento',
+      total,
+      new Date().toISOString().split('T')[0],
+      dto.observaciones || null,
+      dto.estudiante_id || null,
+      dto.estudiante_nombre || null,
+      numeroComprobante,
+      usuarioId || null,
+    ];
+
+    const {
+      data: movimiento,
+      error: errorMovimiento,
+    }: { data: any[] | null; error: any } = await query(sql, params);
+
+    if (errorMovimiento) {
+      // Rollback si es necesario
+      if (facturaId) {
+        await this.supabase.admin
+          .from('factura_detalle')
+          .delete()
+          .eq('factura_id', facturaId);
+        await this.supabase.admin.from('factura').delete().eq('id', facturaId);
+      }
+      throw new BadRequestException(errorMovimiento.message);
+    }
+
+    // Descontar inventario si aplica
+    if (dto.tipo === 'INGRESO' && dto.conceptos) {
+      const articulosVenta = dto.conceptos
+        .filter((c) => c.articulo_inventario_id)
+        .map((c) => ({
+          articulo_inventario_id: c.articulo_inventario_id!,
+          cantidad: c.cantidad,
+        }));
+
+      if (articulosVenta.length > 0) {
+        try {
+          await this.descontarInventario(
+            'Venta - ' + ((factura as any)?.numero_factura || 'SIN-FACTURA'),
+            articulosVenta,
+            (movimiento as any[])?.[0]?.id,
+            usuarioId,
+          );
+        } catch (error) {
+          console.error('Error al descontar inventario:', error);
+        }
+      }
+    }
+
+    // Obtener email del usuario
+    let usuarioEmail = null;
+    if (usuarioId) {
+      const { data: userData } = await this.supabase.admin
+        .from('users')
+        .select('email')
+        .eq('id', usuarioId)
+        .single();
+      usuarioEmail = userData?.email || null;
+    }
+
+    return {
+      message:
+        dto.tipo === 'INGRESO'
+          ? 'Ingreso registrado: Factura y Movimiento creados'
+          : 'Egreso registrado: Movimiento creado',
+      data: {
+        factura,
+        movimiento:
+          movimiento && movimiento[0]
+            ? {
+                ...movimiento[0],
+                registrado_por_email: usuarioEmail,
+              }
+            : null,
+        comprobante: numeroComprobante,
+        // Partida Doble - Representación contable
+        partida_doble: {
+          debe:
+            dto.tipo === 'INGRESO'
+              ? [{ cuenta: 'CAJA/BANCOS', valor: total }]
+              : [
+                  {
+                    cuenta: dto.conceptos?.[0]?.descripcion || 'GASTO',
+                    valor: total,
+                  },
+                ],
+          haber:
+            dto.tipo === 'INGRESO'
+              ? [{ cuenta: 'VENTAS/FACTURAS', valor: total }]
+              : [{ cuenta: 'CAJA/BANCOS', valor: total }],
+        },
+      },
+    };
+  }
 }

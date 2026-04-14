@@ -93,4 +93,59 @@ export class CajaController {
       parseInt(mes, 10),
     );
   }
+
+  // ======================
+  // FACTURAS
+  // ======================
+
+  @Get('facturas')
+  getFacturas(
+    @Query('acudiente_id') acudienteId?: string,
+    @Query('estudiante_id') estudianteId?: string,
+    @Query('estado') estado?: string,
+    @Query('fecha_desde') fechaDesde?: string,
+    @Query('fecha_hasta') fechaHasta?: string,
+  ) {
+    return this.cajaService.getFacturas({
+      acudiente_id: acudienteId,
+      estudiante_id: estudianteId,
+      estado,
+      fecha_desde: fechaDesde,
+      fecha_hasta: fechaHasta,
+    });
+  }
+
+  @Get('facturas/:id')
+  getFacturaById(@Param('id') id: string) {
+    return this.cajaService.getFacturaById(id);
+  }
+
+  @Post('facturas')
+  crearFactura(@Body() dto: any, @Request() req: any) {
+    const usuarioId = req.user?.sub || req.user?.id || null;
+    return this.cajaService.crearFactura(dto, usuarioId);
+  }
+
+  @Delete('facturas/:id/anular')
+  anularFactura(@Param('id') id: string) {
+    return this.cajaService.anularFactura(id);
+  }
+
+  @Post('facturas/:id/pagar')
+  pagarFactura(
+    @Param('id') id: string,
+    @Body() data: { monto_pagado: number },
+  ) {
+    return this.cajaService.pagarFactura(id, data.monto_pagado);
+  }
+
+  // ======================
+  // TRANSACCIÓN UNIFICADA
+  // ======================
+
+  @Post('transaccion')
+  crearTransaccion(@Body() dto: any, @Request() req: any) {
+    const usuarioId = req.user?.sub || req.user?.id || null;
+    return this.cajaService.crearTransaccion(dto, usuarioId);
+  }
 }
