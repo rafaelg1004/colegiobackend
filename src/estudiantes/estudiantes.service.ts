@@ -48,13 +48,16 @@ export class EstudiantesService {
     let countSql = 'SELECT COUNT(*) as count FROM estudiante e';
     const countParams: any[] = [];
 
+    // Si no se especifica estado, excluir Inactivos por defecto
     if (query.estado) {
       countSql += ' WHERE e.estado = $1';
       countParams.push(query.estado);
+    } else {
+      countSql += " WHERE e.estado != 'Inactivo'";
     }
 
     if (query.buscar) {
-      countSql += query.estado ? ' AND' : ' WHERE';
+      countSql += ' AND';
       countSql += ` (e.primer_nombre ILIKE $${countParams.length + 1} OR e.primer_apellido ILIKE $${countParams.length + 1} OR e.numero_documento ILIKE $${countParams.length + 1})`;
       countParams.push(`%${query.buscar}%`);
     }
@@ -95,13 +98,16 @@ export class EstudiantesService {
 
     const params: any[] = [];
 
+    // Si no se especifica estado, excluir Inactivos por defecto
     if (query.estado) {
       sql += ' WHERE e.estado = $1';
       params.push(query.estado);
+    } else {
+      sql += " WHERE e.estado != 'Inactivo'";
     }
 
     if (query.buscar) {
-      sql += query.estado ? ' AND' : ' WHERE';
+      sql += ' AND';
       sql += ` (e.primer_nombre ILIKE $${params.length + 1} OR e.primer_apellido ILIKE $${params.length + 1} OR e.numero_documento ILIKE $${params.length + 1})`;
       params.push(`%${query.buscar}%`);
     }
