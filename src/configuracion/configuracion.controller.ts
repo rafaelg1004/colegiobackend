@@ -6,18 +6,12 @@ import {
   Delete,
   Body,
   Param,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ConfiguracionService } from './configuracion.service';
 import {
   CreateInstitucionDto,
   UpdateInstitucionDto,
-  CreateNivelDto,
-  CreateGradoDto,
-  UpdateGradoDto,
-  CreateTipoActividadDto,
-  QueryGradoDto,
 } from './dto/configuracion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -52,75 +46,6 @@ export class ConfiguracionController {
     @Body() dto: UpdateInstitucionDto,
   ) {
     return this.configuracionService.updateInstitucion(id, dto);
-  }
-
-  // ======================
-  // NIVELES
-  // ======================
-
-  @Get('niveles')
-  getNiveles() {
-    return this.configuracionService.getNiveles();
-  }
-
-  @Post('niveles')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector')
-  crearNivel(@Body() dto: CreateNivelDto) {
-    return this.configuracionService.crearNivel(dto);
-  }
-
-  // ======================
-  // GRADOS
-  // ======================
-
-  @Get('grados')
-  getGrados(@Query() query: QueryGradoDto) {
-    return this.configuracionService.getGrados(query);
-  }
-
-  @Post('grados')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector', 'coordinador')
-  crearGrado(@Body() dto: CreateGradoDto) {
-    return this.configuracionService.crearGrado(dto);
-  }
-
-  @Patch('grados/:id')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector', 'coordinador')
-  updateGrado(@Param('id') id: string, @Body() dto: UpdateGradoDto) {
-    return this.configuracionService.updateGrado(id, dto);
-  }
-
-  @Delete('grados/:id')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector')
-  deleteGrado(@Param('id') id: string) {
-    return this.configuracionService.deleteGrado(id);
-  }
-
-  // ======================
-  // TIPOS DE ACTIVIDAD
-  // ======================
-
-  @Get('tipos-actividad')
-  getTiposActividad() {
-    return this.configuracionService.getTiposActividad();
-  }
-
-  @Post('tipos-actividad')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector', 'coordinador')
-  crearTipoActividad(@Body() dto: CreateTipoActividadDto) {
-    return this.configuracionService.crearTipoActividad(dto);
-  }
-
-  @Delete('tipos-actividad/:id')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'rector')
-  deleteTipoActividad(@Param('id') id: string) {
-    return this.configuracionService.deleteTipoActividad(id);
   }
 
   // ======================
