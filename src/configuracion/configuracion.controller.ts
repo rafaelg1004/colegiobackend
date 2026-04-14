@@ -1,8 +1,23 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfiguracionService } from './configuracion.service';
 import {
-  CreateInstitucionDto, UpdateInstitucionDto,
-  CreateNivelDto, CreateGradoDto, UpdateGradoDto, CreateTipoActividadDto, QueryGradoDto
+  CreateInstitucionDto,
+  UpdateInstitucionDto,
+  CreateNivelDto,
+  CreateGradoDto,
+  UpdateGradoDto,
+  CreateTipoActividadDto,
+  QueryGradoDto,
 } from './dto/configuracion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -32,7 +47,10 @@ export class ConfiguracionController {
   @Patch('institucion/:id')
   @UseGuards(RolesGuard)
   @Roles('admin', 'rector')
-  updateInstitucion(@Param('id') id: string, @Body() dto: UpdateInstitucionDto) {
+  updateInstitucion(
+    @Param('id') id: string,
+    @Body() dto: UpdateInstitucionDto,
+  ) {
     return this.configuracionService.updateInstitucion(id, dto);
   }
 
@@ -103,5 +121,35 @@ export class ConfiguracionController {
   @Roles('admin', 'rector')
   deleteTipoActividad(@Param('id') id: string) {
     return this.configuracionService.deleteTipoActividad(id);
+  }
+
+  // ======================
+  // CONCEPTOS DE COBRO
+  // ======================
+
+  @Get('conceptos-cobro')
+  getConceptosCobro() {
+    return this.configuracionService.getConceptosCobro();
+  }
+
+  @Post('conceptos-cobro')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  crearConceptoCobro(@Body() dto: any) {
+    return this.configuracionService.crearConceptoCobro(dto);
+  }
+
+  @Patch('conceptos-cobro/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  updateConceptoCobro(@Param('id') id: string, @Body() dto: any) {
+    return this.configuracionService.updateConceptoCobro(id, dto);
+  }
+
+  @Delete('conceptos-cobro/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector')
+  deleteConceptoCobro(@Param('id') id: string) {
+    return this.configuracionService.deleteConceptoCobro(id);
   }
 }

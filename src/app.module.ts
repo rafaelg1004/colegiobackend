@@ -22,6 +22,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { EvaluacionModule } from './evaluacion/evaluacion.module';
 import { ContabilidadModule } from './contabilidad/contabilidad.module';
 import { CajaModule } from './caja/caja.module';
+import { FacturacionModule } from './facturacion/facturacion.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -49,6 +50,7 @@ import { AppService } from './app.service';
     EvaluacionModule,
     ContabilidadModule,
     CajaModule,
+    FacturacionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

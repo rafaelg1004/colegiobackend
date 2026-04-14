@@ -1,6 +1,15 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { CreateArticuloDto, UpdateArticuloDto, CreateMovimientoDto, CreateEspacioDto } from './dto/inventario.dto';
+import {
+  CreateArticuloDto,
+  UpdateArticuloDto,
+  CreateMovimientoDto,
+  CreateEspacioDto,
+} from './dto/inventario.dto';
 
 @Injectable()
 export class InventarioService {
@@ -47,40 +56,64 @@ export class InventarioService {
     return { message: 'Artículo creado', data };
   }
 
-  async getArticulos(filtros: { categoria_id?: string; buscar?: string; alerta?: string }) {
-    let qb = this.supabase.admin
-      .from('articulo_inventario')
-      .select(`*, categoria:categoria_id(nombre)`)
-      .order('nombre');
+  async getArticulos(filtros: {
+    categoria_id?: string;
+    buscar?: string;
+    alerta?: string;
+  }) {
+    console.log('=== getArticulos llamado ===');
+    console.log('Filtros:', filtros);
 
-    if (filtros.categoria_id) qb = qb.eq('categoria_id', filtros.categoria_id);
-    if (filtros.buscar) {
-      qb = qb.or(`nombre.ilike.%${filtros.buscar}%,codigo_interno.ilike.%${filtros.buscar}%`);
+    try {
+      let qb = this.supabase.admin
+        .from('articulo_inventario')
+        .select('*')
+        .order('nombre');
+
+      if (filtros.categoria_id)
+        qb = qb.eq('categoria_id', filtros.categoria_id);
+      if (filtros.buscar) {
+        qb = qb.or(
+          `nombre.ilike.%${filtros.buscar}%,codigo_interno.ilike.%${filtros.buscar}%`,
+        );
+      }
+
+      const { data, error } = await qb;
+      console.log('Resultado:', { data: data?.length, error: error?.message });
+
+      if (error) {
+        console.error('Error en getArticulos:', error);
+        throw new BadRequestException(error.message);
+      }
+
+      let resultado = data || [];
+
+      // Filtrar por alerta de stock
+      if (filtros.alerta === 'bajo') {
+        resultado = resultado.filter(
+          (a) => a.cantidad_stock > 0 && a.cantidad_stock <= a.cantidad_minima,
+        );
+      } else if (filtros.alerta === 'agotado') {
+        resultado = resultado.filter((a) => a.cantidad_stock <= 0);
+      }
+
+      return resultado;
+    } catch (error) {
+      console.error('Error en getArticulos:', error);
+      throw new BadRequestException(error.message);
     }
-
-    const { data, error } = await qb;
-    if (error) throw new BadRequestException(error.message);
-
-    let resultado = data || [];
-
-    // Filtrar por alerta de stock
-    if (filtros.alerta === 'bajo') {
-      resultado = resultado.filter((a) => a.cantidad_stock > 0 && a.cantidad_stock <= a.cantidad_minima);
-    } else if (filtros.alerta === 'agotado') {
-      resultado = resultado.filter((a) => a.cantidad_stock <= 0);
-    }
-
-    return resultado;
   }
 
   async getArticulo(id: string) {
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
-      .select(`
+      .select(
+        `
         *, 
         categoria:categoria_id(nombre),
         movimiento_inventario(tipo, cantidad, motivo, fecha, responsable:responsable_id(primer_nombre, primer_apellido))
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
@@ -135,25 +168,37 @@ export class InventarioService {
         ...dto,
         responsable_id: responsableId || null,
       })
-      .select(`
+      .select(
+        `
         *,
         articulo:articulo_id(nombre, cantidad_stock),
         responsable:responsable_id(primer_nombre, primer_apellido)
-      `)
+      `,
+      )
       .single();
 
     if (error) throw new BadRequestException(error.message);
-    return { message: `Movimiento de ${dto.tipo.toLowerCase()} registrado`, data };
+    return {
+      message: `Movimiento de ${dto.tipo.toLowerCase()} registrado`,
+      data,
+    };
   }
 
-  async getMovimientos(filtros: { articulo_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string }) {
+  async getMovimientos(filtros: {
+    articulo_id?: string;
+    tipo?: string;
+    fecha_desde?: string;
+    fecha_hasta?: string;
+  }) {
     let qb = this.supabase.admin
       .from('movimiento_inventario')
-      .select(`
+      .select(
+        `
         *,
         articulo:articulo_id(nombre, codigo_interno),
         responsable:responsable_id(primer_nombre, primer_apellido)
-      `)
+      `,
+      )
       .order('fecha', { ascending: false })
       .limit(100);
 
@@ -219,14 +264,19 @@ export class InventarioService {
       .select('cantidad_stock, precio_unitario, estado, cantidad_minima');
 
     const items = articulos || [];
-    const valorTotal = items.reduce((s, a) => s + (a.cantidad_stock * (a.precio_unitario || 0)), 0);
+    const valorTotal = items.reduce(
+      (s, a) => s + a.cantidad_stock * (a.precio_unitario || 0),
+      0,
+    );
 
     return {
       total_articulos: items.length,
       valor_total_inventario: valorTotal,
       disponibles: items.filter((a) => a.estado === 'Disponible').length,
       agotados: items.filter((a) => a.estado === 'Agotado').length,
-      stock_bajo: items.filter((a) => a.cantidad_stock > 0 && a.cantidad_stock <= a.cantidad_minima).length,
+      stock_bajo: items.filter(
+        (a) => a.cantidad_stock > 0 && a.cantidad_stock <= a.cantidad_minima,
+      ).length,
       dados_de_baja: items.filter((a) => a.estado === 'Dado de baja').length,
     };
   }

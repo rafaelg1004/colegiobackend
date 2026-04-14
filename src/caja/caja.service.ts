@@ -41,11 +41,117 @@ interface MovimientoCaja {
   estudiante_nombre?: string;
   observacion?: string;
   registrado_por?: string;
+  // Campos para inventario
+  articulos?: ArticuloVenta[];
+}
+
+interface ArticuloVenta {
+  articulo_inventario_id: string;
+  cantidad: number;
+  nombre?: string;
+  precio_unitario?: number;
 }
 
 @Injectable()
 export class CajaService {
   constructor(private supabase: SupabaseService) {}
+
+  // ======================
+  // CONCEPTOS CON INVENTARIO
+  // ======================
+
+  async getConceptosCobro() {
+    // Obtener todos los conceptos activos (con y sin inventario)
+    const { data: conceptos, error } = await this.supabase.admin
+      .from('concepto_cobro')
+      .select(
+        `
+        *,
+        categoria_inventario:categoria_inventario_id(*)
+      `,
+      )
+      .eq('activo', true)
+      .order('nombre');
+
+    if (error) throw new BadRequestException(error.message);
+    return conceptos || [];
+  }
+
+  async getArticulosPorCategoria(categoriaId: string) {
+    // Obtener artículos de una categoría
+    const { data: articulos, error } = await this.supabase.admin
+      .from('articulo_inventario')
+      .select('*')
+      .eq('categoria_id', categoriaId)
+      .order('nombre');
+
+    if (error) throw new BadRequestException(error.message);
+    // Filtrar solo artículos con stock en el frontend
+    return (articulos || []).filter((a) => a.cantidad_stock > 0);
+  }
+
+  async getArticulosConcepto(conceptoId: string) {
+    // Si el concepto es compuesto, obtener sus artículos
+    const { data: relaciones, error } = await this.supabase.admin
+      .from('concepto_articulo')
+      .select(
+        `
+        *,
+        articulo:articulo_inventario_id(*)
+      `,
+      )
+      .eq('concepto_cobro_id', conceptoId)
+      .eq('activo', true);
+
+    if (error) throw new BadRequestException(error.message);
+    return relaciones || [];
+  }
+
+  private async descontarInventario(
+    conceptoId: string,
+    articulosVenta: ArticuloVenta[],
+    movimientoCajaId: string,
+    usuarioId?: string,
+  ) {
+    const query = this.supabase.admin.query;
+
+    for (const articulo of articulosVenta) {
+      // Verificar stock disponible
+      const { data: stockData } = await query(
+        'SELECT cantidad_stock, nombre FROM articulo_inventario WHERE id = $1',
+        [articulo.articulo_inventario_id],
+      );
+
+      const stockActual = stockData?.[0]?.cantidad_stock || 0;
+      const nombreArticulo = stockData?.[0]?.nombre || 'Artículo';
+
+      if (stockActual < articulo.cantidad) {
+        throw new BadRequestException(
+          `Stock insuficiente de "${nombreArticulo}". Disponible: ${stockActual}, solicitado: ${articulo.cantidad}`,
+        );
+      }
+
+      // Registrar movimiento de salida en inventario
+      const { error: movError } = await this.supabase.admin
+        .from('movimiento_inventario')
+        .insert({
+          articulo_id: articulo.articulo_inventario_id,
+          tipo: 'Salida',
+          cantidad: articulo.cantidad,
+          motivo: `Venta - Movimiento Caja #${movimientoCajaId}`,
+          responsable_id: usuarioId || null,
+          fecha: new Date().toISOString(),
+        });
+
+      if (movError) {
+        throw new BadRequestException(
+          `Error al registrar movimiento de inventario: ${movError.message}`,
+        );
+      }
+    }
+
+    return { message: 'Inventario actualizado' };
+  }
 
   // ======================
   // BUSCAR ESTUDIANTES
@@ -127,18 +233,39 @@ export class CajaService {
     tipo?: 'INGRESO' | 'EGRESO';
     concepto?: string;
   }) {
-    let qb = this.supabase.admin
-      .from('movimiento_caja')
-      .select('*')
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false });
+    const query = this.supabase.admin.query;
 
-    if (filtros.fecha_desde) qb = qb.gte('fecha', filtros.fecha_desde);
-    if (filtros.fecha_hasta) qb = qb.lte('fecha', filtros.fecha_hasta);
-    if (filtros.tipo) qb = qb.eq('tipo', filtros.tipo);
-    if (filtros.concepto) qb = qb.eq('concepto', filtros.concepto);
+    let sql = `
+      SELECT 
+        mc.*,
+        u.email as registrado_por_email
+      FROM movimiento_caja mc
+      LEFT JOIN users u ON mc.registrado_por = u.id
+      WHERE 1=1
+    `;
 
-    const { data, error } = await qb;
+    const params: any[] = [];
+
+    if (filtros.fecha_desde) {
+      sql += ` AND mc.fecha >= $${params.length + 1}`;
+      params.push(filtros.fecha_desde);
+    }
+    if (filtros.fecha_hasta) {
+      sql += ` AND mc.fecha <= $${params.length + 1}`;
+      params.push(filtros.fecha_hasta);
+    }
+    if (filtros.tipo) {
+      sql += ` AND mc.tipo = $${params.length + 1}`;
+      params.push(filtros.tipo);
+    }
+    if (filtros.concepto) {
+      sql += ` AND mc.concepto = $${params.length + 1}`;
+      params.push(filtros.concepto);
+    }
+
+    sql += ` ORDER BY mc.fecha DESC, mc.created_at DESC`;
+
+    const { data, error } = await query(sql, params);
     if (error) throw new BadRequestException(error.message);
     return data || [];
   }
@@ -196,6 +323,28 @@ export class CajaService {
       throw new BadRequestException(error.message);
     }
 
+    const movimientoId = data?.[0]?.id;
+
+    // Si hay artículos de inventario, descontar del stock
+    if (
+      movimiento.articulos &&
+      movimiento.articulos.length > 0 &&
+      movimientoId
+    ) {
+      try {
+        await this.descontarInventario(
+          movimiento.concepto,
+          movimiento.articulos,
+          movimientoId,
+          usuarioId,
+        );
+      } catch (error) {
+        console.error('Error al descontar inventario:', error);
+        // No lanzamos error para no afectar el movimiento de caja ya creado
+        // pero podríamos loguear o notificar
+      }
+    }
+
     // Buscar el correo del usuario para mostrar en el comprobante
     let usuarioEmail = null;
     if (usuarioId) {
@@ -234,12 +383,18 @@ export class CajaService {
     // Obtener movimientos del período
     const movimientos = await this.getMovimientos({ fecha_desde, fecha_hasta });
 
-    // Calcular totales
+    // Calcular totales (convertir monto a número ya que puede venir como string)
     const ingresos = movimientos.filter((m) => m.tipo === 'INGRESO');
     const egresos = movimientos.filter((m) => m.tipo === 'EGRESO');
 
-    const totalIngresos = ingresos.reduce((sum, m) => sum + (m.monto || 0), 0);
-    const totalEgresos = egresos.reduce((sum, m) => sum + (m.monto || 0), 0);
+    const totalIngresos = ingresos.reduce(
+      (sum, m) => sum + (parseFloat(m.monto) || 0),
+      0,
+    );
+    const totalEgresos = egresos.reduce(
+      (sum, m) => sum + (parseFloat(m.monto) || 0),
+      0,
+    );
 
     // Agrupar por concepto
     const porConceptoIngreso = this.agruparPorConcepto(ingresos);
@@ -282,7 +437,7 @@ export class CajaService {
       if (!agrupado[m.concepto]) {
         agrupado[m.concepto] = { concepto: m.concepto, monto: 0, cantidad: 0 };
       }
-      agrupado[m.concepto].monto += m.monto || 0;
+      agrupado[m.concepto].monto += parseFloat(m.monto) || 0;
       agrupado[m.concepto].cantidad += 1;
     }
 

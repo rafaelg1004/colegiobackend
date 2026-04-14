@@ -25,6 +25,21 @@ export class CajaController {
     return this.cajaService.getConceptos();
   }
 
+  @Get('conceptos-cobro')
+  getConceptosCobro() {
+    return this.cajaService.getConceptosCobro();
+  }
+
+  @Get('conceptos-cobro/:id/articulos')
+  getArticulosConcepto(@Param('id') id: string) {
+    return this.cajaService.getArticulosConcepto(id);
+  }
+
+  @Get('articulos-por-categoria/:categoriaId')
+  getArticulosPorCategoria(@Param('categoriaId') categoriaId: string) {
+    return this.cajaService.getArticulosPorCategoria(categoriaId);
+  }
+
   @Get('buscar-estudiantes')
   buscarEstudiantes(@Query('q') query: string) {
     return this.cajaService.buscarEstudiantes(query || '');
