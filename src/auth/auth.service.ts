@@ -177,8 +177,6 @@ export class AuthService {
   }
 
   async refreshToken(refresh_token: string) {
-    // Con autenticación local, generamos nuevos tokens
-    // En producción, podrías verificar el refresh token en una tabla
     const userId = this.extractUserIdFromRefreshToken(refresh_token);
     if (!userId) {
       throw new UnauthorizedException('Token de refresco inválido');
@@ -215,8 +213,7 @@ export class AuthService {
   }
 
   private extractUserIdFromRefreshToken(token: string): string | null {
-    // Simplificado - en producción verificarías en una tabla de refresh tokens
-    return null; // Implementar según necesidades
+    return null;
   }
 
   async getProfile(userId: string) {
@@ -250,23 +247,87 @@ export class AuthService {
   }
 
   async listUsers(rol?: string) {
-    let query = this.database.admin
+    // Get perfil_usuario data
+    let puQuery = this.database.admin
       .from('perfil_usuario')
-      .select(
-        `
-        id, rol, activo, created_at,
-        empleado:empleado_id (primer_nombre, primer_apellido, cargo),
-        acudiente:acudiente_id (primer_nombre, primer_apellido),
-        estudiante:estudiante_id (primer_nombre, primer_apellido)
-      `,
-      )
+      .select('id, rol, activo, created_at, empleado_id, acudiente_id, estudiante_id')
       .order('created_at', { ascending: false });
+    if (rol) puQuery = puQuery.eq('rol', rol);
+    
+    const { data: perfiles, error: puError } = await puQuery;
+    if (puError) throw new BadRequestException(puError.message);
+    if (!perfiles || perfiles.length === 0) return [];
 
-    if (rol) query = query.eq('rol', rol);
+    const ids = perfiles.map((p: any) => p.id);
 
-    const { data, error } = await query;
-    if (error) throw new BadRequestException(error.message);
-    return data;
+    // Get emails from users table
+    const { data: usersData } = await this.database.admin
+      .from('users')
+      .select('id, email')
+      .in('id', ids);
+    const emailMap = new Map((usersData || []).map((u: any) => [u.id, u.email]));
+
+    // Get empleado data (singular table name)
+    const empleadoIds = perfiles.filter((p: any) => p.empleado_id).map((p: any) => p.empleado_id);
+    let empleadosMap = new Map();
+    if (empleadoIds.length > 0) {
+      const { data: empleados } = await this.database.admin
+        .from('empleado')
+        .select('id, primer_nombre, primer_apellido, cargo')
+        .in('id', empleadoIds);
+      empleadosMap = new Map((empleados || []).map((e: any) => [e.id, e]));
+    }
+
+    // Get acudientes data  
+    const acudienteIds = perfiles.filter((p: any) => p.acudiente_id).map((p: any) => p.acudiente_id);
+    let acudientesMap = new Map();
+    if (acudienteIds.length > 0) {
+      const { data: acudientes } = await this.database.admin
+        .from('acudientes')
+        .select('id, primer_nombre, primer_apellido')
+        .in('id', acudienteIds);
+      acudientesMap = new Map((acudientes || []).map((a: any) => [a.id, a]));
+    }
+
+    // Get estudiantes data
+    const estudianteIds = perfiles.filter((p: any) => p.estudiante_id).map((p: any) => p.estudiante_id);
+    let estudiantesMap = new Map();
+    if (estudianteIds.length > 0) {
+      const { data: estudiantes } = await this.database.admin
+        .from('estudiantes')
+        .select('id, primer_nombre, primer_apellido, numero_documento')
+        .in('id', estudianteIds);
+      estudiantesMap = new Map((estudiantes || []).map((e: any) => [e.id, e]));
+    }
+
+    // Combine all data
+    return perfiles.map((p: any) => {
+      const empleado = p.empleado_id ? empleadosMap.get(p.empleado_id) : undefined;
+      const acudiente = p.acudiente_id ? acudientesMap.get(p.acudiente_id) : undefined;
+      const estudiante = p.estudiante_id ? estudiantesMap.get(p.estudiante_id) : undefined;
+
+      return {
+        id: p.id,
+        rol: p.rol,
+        activo: p.activo,
+        created_at: p.created_at,
+        email: emailMap.get(p.id) || null,
+        empleado: empleado ? {
+          primer_nombre: empleado.primer_nombre,
+          primer_apellido: empleado.primer_apellido,
+          cargo: empleado.cargo
+        } : undefined,
+        acudiente: acudiente ? {
+          primer_nombre: acudiente.primer_nombre,
+          primer_apellido: acudiente.primer_apellido
+        } : undefined,
+        estudiante: estudiante ? {
+          primer_nombre: estudiante.primer_nombre,
+          primer_apellido: estudiante.primer_apellido,
+          numero_documento: estudiante.numero_documento
+        } : undefined
+      };
+    });
   }
 
   async toggleUserActive(userId: string, activo: boolean) {
