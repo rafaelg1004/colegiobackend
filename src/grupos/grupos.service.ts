@@ -104,14 +104,29 @@ export class GruposService {
   }
 
   async getEstudiantesDelGrupo(grupoId: string) {
-    const { data, error } = await this.supabase.admin
-      .from('matricula')
-      .select('*')
-      .eq('grupo_id', grupoId)
-      .eq('estado', 'Activa');
+    const query = this.supabase.admin.query;
 
+    const sql = `
+      SELECT 
+        m.id,
+        m.estado,
+        json_build_object(
+          'id', e.id,
+          'primer_nombre', e.primer_nombre,
+          'primer_apellido', e.primer_apellido,
+          'numero_documento', e.numero_documento,
+          'genero', e.genero
+        ) as estudiante
+      FROM matricula m
+      INNER JOIN estudiante e ON m.estudiante_id = e.id
+      WHERE m.grupo_id = $1
+      AND m.estado = 'Activa'
+      ORDER BY e.primer_apellido, e.primer_nombre
+    `;
+
+    const { data, error } = await query(sql, [grupoId]);
     if (error) throw new BadRequestException(error.message);
-    return data;
+    return data || [];
   }
 
   async getGrados() {
