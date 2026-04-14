@@ -28,9 +28,15 @@ export class EstudiantesService {
       );
     }
 
+    // Asignar estado Activo por defecto si no se proporciona
+    const estudianteData = {
+      ...dto,
+      estado: dto.estado || 'Activo',
+    };
+
     const { data, error } = await this.supabase.admin
       .from('estudiante')
-      .insert(dto)
+      .insert(estudianteData)
       .select()
       .single();
 
@@ -48,12 +54,12 @@ export class EstudiantesService {
     let countSql = 'SELECT COUNT(*) as count FROM estudiante e';
     const countParams: any[] = [];
 
-    // Si no se especifica estado, excluir Inactivos por defecto
+    // Si no se especifica estado, mostrar Activos y los que tienen estado null (no definido)
     if (query.estado) {
       countSql += ' WHERE e.estado = $1';
       countParams.push(query.estado);
     } else {
-      countSql += " WHERE e.estado != 'Inactivo'";
+      countSql += " WHERE (e.estado IS NULL OR e.estado != 'Inactivo')";
     }
 
     if (query.buscar) {
@@ -98,12 +104,12 @@ export class EstudiantesService {
 
     const params: any[] = [];
 
-    // Si no se especifica estado, excluir Inactivos por defecto
+    // Si no se especifica estado, mostrar Activos y los que tienen estado null
     if (query.estado) {
       sql += ' WHERE e.estado = $1';
       params.push(query.estado);
     } else {
-      sql += " WHERE e.estado != 'Inactivo'";
+      sql += " WHERE (e.estado IS NULL OR e.estado != 'Inactivo')";
     }
 
     if (query.buscar) {
