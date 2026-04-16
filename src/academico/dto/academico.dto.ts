@@ -22,6 +22,10 @@ export class CreateSedeDto {
   @IsOptional()
   @IsString()
   telefono?: string;
+
+  @IsOptional()
+  @IsUUID()
+  institucion_id?: string;
 }
 
 export class CreateAnioLectivoDto {
