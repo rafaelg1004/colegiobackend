@@ -141,8 +141,9 @@ export class QueryBuilder<T = any> {
   private headOnly: boolean = false;
   private orFilters: Array<{ column: string; operator: string; value: any }> =
     [];
-  private operation: 'select' | 'insert' | 'update' | 'delete' = 'select';
+  private operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select';
   private mutationData?: Partial<T> | Partial<T>[];
+  private upsertOptions?: { onConflict?: string; ignoreDuplicates?: boolean };
 
   constructor(table: string, client: Pool | PoolClient) {
     this.table = table;
@@ -278,6 +279,16 @@ export class QueryBuilder<T = any> {
     return this;
   }
 
+  upsert(
+    data: Partial<T> | Partial<T>[],
+    options?: { onConflict?: string; ignoreDuplicates?: boolean },
+  ): QueryBuilder<T> {
+    this.operation = 'upsert';
+    this.mutationData = data;
+    this.upsertOptions = options;
+    return this;
+  }
+
   async execute(): Promise<{
     data: T[] | null;
     error: Error | null;
@@ -292,6 +303,8 @@ export class QueryBuilder<T = any> {
         return await this.executeUpdate();
       } else if (this.operation === 'delete') {
         return await this.executeDelete();
+      } else if (this.operation === 'upsert') {
+        return await this.executeUpsert();
       }
       return { data: null, error: new Error('Unknown operation') };
     } catch (error) {
@@ -354,8 +367,26 @@ export class QueryBuilder<T = any> {
     }
 
     if (this.orderBy) {
-      sql += ` ORDER BY "${this.orderBy.column}" ${this.orderBy.ascending ? 'ASC' : 'DESC'}`;
+      // Manejar ORDER BY con notación de punto (relacion.columna)
+      const orderColumn = this.orderBy.column;
+      if (orderColumn.includes('.') && relations.length > 0) {
+        // Extraer relación y columna
+        const [relName, colName] = orderColumn.split('.');
+        // Buscar la relación correspondiente
+        const matchingRel = relations.find((r) => r.alias === relName);
+        if (matchingRel) {
+          // Usar MIN/MAX para poder ordenar por la columna relacionada en GROUP BY
+          sql += ` ORDER BY MIN("t1"."${colName}") ${this.orderBy.ascending ? 'ASC' : 'DESC'}`;
+        } else {
+          sql += ` ORDER BY "${orderColumn}" ${this.orderBy.ascending ? 'ASC' : 'DESC'}`;
+        }
+      } else {
+        sql += ` ORDER BY "${orderColumn}" ${this.orderBy.ascending ? 'ASC' : 'DESC'}`;
+      }
     }
+
+    // Debug: log SQL generado
+    console.log('🔍 SQL Generated:', sql);
 
     if (this.limitValue) {
       sql += ` LIMIT ${this.limitValue}`;
@@ -405,27 +436,33 @@ export class QueryBuilder<T = any> {
       rel: ParsedRelation,
       parentAlias: string,
       idx: number,
+      isRoot: boolean = true,
     ): { json: string; joins: string[]; nextIdx: number } => {
       const relAlias = `t${idx}`;
       const relJoins: string[] = [];
 
       relJoins.push(
-        `LEFT JOIN "${rel.targetTable}" ${relAlias} ON ${parentAlias}."${rel.fkColumn}" = ${relAlias}."id"`,
+        `LEFT JOIN "${rel.targetTable}" "${relAlias}" ON ${parentAlias}."${rel.fkColumn}" = "${relAlias}"."id"`,
       );
 
       const colObjs: string[] = [];
       if (rel.columns.includes('*')) {
-        colObjs.push(`'data'`, `row_to_json(${relAlias})`);
+        colObjs.push(`'data'`, `row_to_json("${relAlias}")`);
       } else {
         rel.columns.forEach((col) => {
-          colObjs.push(`'${col}'`, `${relAlias}."${col}"`);
+          colObjs.push(`'${col}'`, `"${relAlias}"."${col}"`);
         });
       }
 
       let nextIdx = idx + 1;
       if (rel.nested && rel.nested.length > 0) {
         rel.nested.forEach((nestedRel) => {
-          const nestedResult = buildRelationJson(nestedRel, relAlias, nextIdx);
+          const nestedResult = buildRelationJson(
+            nestedRel,
+            relAlias,
+            nextIdx,
+            false,
+          );
           colObjs.push(`'${nestedRel.alias}'`, nestedResult.json);
           relJoins.push(...nestedResult.joins);
           nextIdx = nestedResult.nextIdx;
@@ -434,8 +471,18 @@ export class QueryBuilder<T = any> {
 
       const jsonExpr = `json_build_object(${colObjs.join(', ')})`;
 
+      // En el nivel raíz: usar json_agg para relaciones 1:N
+      // En niveles anidados: usar row_to_json para relaciones 1:1 (evitar json_agg anidado)
+      let finalJson: string;
+      if (isRoot) {
+        finalJson = `COALESCE(json_agg(CASE WHEN "${relAlias}"."id" IS NOT NULL THEN ${jsonExpr} END), '[]') AS "${rel.alias}"`;
+      } else {
+        // Para relaciones anidadas, usar row_to_json sin agregación
+        finalJson = `CASE WHEN "${relAlias}"."id" IS NOT NULL THEN ${jsonExpr} END`;
+      }
+
       return {
-        json: `COALESCE(json_agg(${jsonExpr}) FILTER (WHERE ${relAlias}.id IS NOT NULL), '[]') as ${rel.alias}`,
+        json: finalJson,
         joins: relJoins,
         nextIdx,
       };
@@ -542,6 +589,61 @@ export class QueryBuilder<T = any> {
     const result: QueryResult = await this.client.query(sql, params);
 
     return { data: result.rows, error: null };
+  }
+
+  private async executeUpsert(): Promise<{
+    data: T[] | null;
+    error: Error | null;
+  }> {
+    const dataArray = Array.isArray(this.mutationData)
+      ? this.mutationData
+      : [this.mutationData];
+    if (dataArray.length === 0 || !dataArray[0]) {
+      return { data: null, error: null };
+    }
+
+    const columns = Object.keys(dataArray[0]);
+    let paramIndex = 1;
+    const params: any[] = [];
+
+    const placeholders = dataArray
+      .map(() => `(${columns.map(() => `$${paramIndex++}`).join(',')})`)
+      .join(',');
+
+    dataArray.forEach((d) =>
+      columns.forEach((c) => params.push((d as any)[c])),
+    );
+
+    let sql = `INSERT INTO "${this.table}" (${columns.map((c) => `"${c}"`).join(',')}) VALUES ${placeholders}`;
+
+    const conflictCols = this.upsertOptions?.onConflict;
+    if (conflictCols) {
+      if (this.upsertOptions?.ignoreDuplicates) {
+        sql += ` ON CONFLICT (${conflictCols.split(',').map(c => `"${c.trim()}"`).join(',')}) DO NOTHING`;
+      } else {
+        const updateClause = columns
+          .filter((c) => !conflictCols.split(',').map(cc => cc.trim()).includes(c))
+          .map((c) => `"${c}" = EXCLUDED."${c}"`)
+          .join(', ');
+        
+        if (updateClause) {
+          sql += ` ON CONFLICT (${conflictCols.split(',').map(c => `"${c.trim()}"`).join(',')}) DO UPDATE SET ${updateClause}`;
+        } else {
+          sql += ` ON CONFLICT (${conflictCols.split(',').map(c => `"${c.trim()}"`).join(',')}) DO NOTHING`;
+        }
+      }
+    }
+
+    sql += ` RETURNING *`;
+
+    const result: QueryResult = await this.client.query(sql, params);
+
+    return {
+      data: Array.isArray(this.mutationData)
+        ? result.rows
+        : result.rows[0] || null,
+      error: null,
+    };
   }
 
   async then(

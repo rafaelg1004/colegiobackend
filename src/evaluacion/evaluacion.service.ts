@@ -1,34 +1,49 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
 import {
-  CreateActividadEvaluativaDto, UpdateActividadEvaluativaDto,
-  CreateBloqueHorarioDto, UpdateBloqueHorarioDto,
-  CreateNotaPeriodoDto, UpdateNotaPeriodoDto
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
+import {
+  CreateActividadEvaluativaDto,
+  UpdateActividadEvaluativaDto,
+  CreateBloqueHorarioDto,
+  UpdateBloqueHorarioDto,
+  CreateNotaPeriodoDto,
+  UpdateNotaPeriodoDto,
 } from './dto/evaluacion.dto';
 
 @Injectable()
 export class EvaluacionService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(private db: DatabaseService) {}
 
   // ======================
   // ACTIVIDADES EVALUATIVAS
   // ======================
 
-  async getActividades(filtros: { grupo_id?: string; asignatura_id?: string; periodo_id?: string }) {
-    let qb = this.supabase.admin
+  async getActividades(filtros: {
+    grupo_id?: string;
+    asignatura_id?: string;
+    periodo_id?: string;
+  }) {
+    let qb = this.db.admin
       .from('actividad_evaluativa')
-      .select(`
+      .select(
+        `
         *,
         tipo_actividad:tipo_actividad_id(nombre),
         asignatura:asignatura_id(nombre, area:area_id(nombre)),
         grupo:grupo_id(nombre),
         periodo:periodo_academico_id(nombre, numero)
-      `)
+      `,
+      )
       .order('fecha', { ascending: false });
 
     if (filtros.grupo_id) qb = qb.eq('grupo_id', filtros.grupo_id);
-    if (filtros.asignatura_id) qb = qb.eq('asignatura_id', filtros.asignatura_id);
-    if (filtros.periodo_id) qb = qb.eq('periodo_academico_id', filtros.periodo_id);
+    if (filtros.asignatura_id)
+      qb = qb.eq('asignatura_id', filtros.asignatura_id);
+    if (filtros.periodo_id)
+      qb = qb.eq('periodo_academico_id', filtros.periodo_id);
 
     const { data, error } = await qb;
     if (error) throw new BadRequestException(error.message);
@@ -36,24 +51,27 @@ export class EvaluacionService {
   }
 
   async getActividad(id: string) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('actividad_evaluativa')
-      .select(`
+      .select(
+        `
         *,
         tipo_actividad:tipo_actividad_id(nombre),
         asignatura:asignatura_id(nombre, area:area_id(nombre)),
         grupo:grupo_id(nombre),
         periodo:periodo_academico_id(nombre, numero)
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
-    if (error || !data) throw new NotFoundException('Actividad evaluativa no encontrada');
+    if (error || !data)
+      throw new NotFoundException('Actividad evaluativa no encontrada');
     return data;
   }
 
   async crearActividad(dto: CreateActividadEvaluativaDto) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('actividad_evaluativa')
       .insert(dto)
       .select()
@@ -64,7 +82,7 @@ export class EvaluacionService {
   }
 
   async updateActividad(id: string, dto: UpdateActividadEvaluativaDto) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('actividad_evaluativa')
       .update(dto)
       .eq('id', id)
@@ -72,23 +90,26 @@ export class EvaluacionService {
       .single();
 
     if (error) throw new BadRequestException(error.message);
-    if (!data) throw new NotFoundException('Actividad evaluativa no encontrada');
+    if (!data)
+      throw new NotFoundException('Actividad evaluativa no encontrada');
     return { message: 'Actividad evaluativa actualizada', data };
   }
 
   async deleteActividad(id: string) {
     // Verificar si hay calificaciones asociadas
-    const { data: calificaciones } = await this.supabase.admin
+    const { data: calificaciones } = await this.db.admin
       .from('calificacion')
       .select('id')
       .eq('actividad_evaluativa_id', id)
       .limit(1);
 
     if (calificaciones && calificaciones.length > 0) {
-      throw new BadRequestException('No se puede eliminar una actividad con calificaciones asociadas');
+      throw new BadRequestException(
+        'No se puede eliminar una actividad con calificaciones asociadas',
+      );
     }
 
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('actividad_evaluativa')
       .delete()
       .eq('id', id)
@@ -103,10 +124,15 @@ export class EvaluacionService {
   // BLOQUES HORARIOS
   // ======================
 
-  async getBloquesHorarios(filtros: { anio_lectivo_id?: string; dia_semana?: string; grupo_id?: string }) {
-    let qb = this.supabase.admin
+  async getBloquesHorarios(filtros: {
+    anio_lectivo_id?: string;
+    dia_semana?: string;
+    grupo_id?: string;
+  }) {
+    let qb = this.db.admin
       .from('bloque_horario')
-      .select(`
+      .select(
+        `
         *,
         asignacion:asignacion_docente_id(
           docente:empleado_id(primer_nombre, primer_apellido),
@@ -114,10 +140,12 @@ export class EvaluacionService {
           grupo:grupo_id(nombre)
         ),
         anio:anio_lectivo_id(anio)
-      `)
+      `,
+      )
       .order('hora_inicio');
 
-    if (filtros.anio_lectivo_id) qb = qb.eq('anio_lectivo_id', filtros.anio_lectivo_id);
+    if (filtros.anio_lectivo_id)
+      qb = qb.eq('anio_lectivo_id', filtros.anio_lectivo_id);
     if (filtros.dia_semana) qb = qb.eq('dia_semana', filtros.dia_semana);
     if (filtros.grupo_id) {
       qb = qb.eq('asignacion.grupo_id', filtros.grupo_id);
@@ -129,9 +157,10 @@ export class EvaluacionService {
   }
 
   async getBloqueHorario(id: string) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('bloque_horario')
-      .select(`
+      .select(
+        `
         *,
         asignacion:asignacion_docente_id(
           *,
@@ -140,16 +169,18 @@ export class EvaluacionService {
           grupo:grupo_id(nombre)
         ),
         anio:anio_lectivo_id(anio)
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
-    if (error || !data) throw new NotFoundException('Bloque horario no encontrado');
+    if (error || !data)
+      throw new NotFoundException('Bloque horario no encontrado');
     return data;
   }
 
   async crearBloqueHorario(dto: CreateBloqueHorarioDto) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('bloque_horario')
       .insert(dto)
       .select()
@@ -160,7 +191,7 @@ export class EvaluacionService {
   }
 
   async updateBloqueHorario(id: string, dto: UpdateBloqueHorarioDto) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('bloque_horario')
       .update(dto)
       .eq('id', id)
@@ -173,7 +204,7 @@ export class EvaluacionService {
   }
 
   async deleteBloqueHorario(id: string) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('bloque_horario')
       .delete()
       .eq('id', id)
@@ -188,20 +219,29 @@ export class EvaluacionService {
   // NOTAS POR PERIODO
   // ======================
 
-  async getNotasPeriodo(filtros: { estudiante_id?: string; asignatura_id?: string; periodo_id?: string }) {
-    let qb = this.supabase.admin
+  async getNotasPeriodo(filtros: {
+    estudiante_id?: string;
+    asignatura_id?: string;
+    periodo_id?: string;
+  }) {
+    let qb = this.db.admin
       .from('nota_periodo')
-      .select(`
+      .select(
+        `
         *,
         estudiante:estudiante_id(primer_nombre, primer_apellido, numero_documento),
         asignatura:asignatura_id(nombre, area:area_id(nombre)),
         periodo:periodo_academico_id(nombre, numero)
-      `)
-      .order('estudiante.apellido');
+      `,
+      )
+      .order('estudiante.primer_apellido');
 
-    if (filtros.estudiante_id) qb = qb.eq('estudiante_id', filtros.estudiante_id);
-    if (filtros.asignatura_id) qb = qb.eq('asignatura_id', filtros.asignatura_id);
-    if (filtros.periodo_id) qb = qb.eq('periodo_academico_id', filtros.periodo_id);
+    if (filtros.estudiante_id)
+      qb = qb.eq('estudiante_id', filtros.estudiante_id);
+    if (filtros.asignatura_id)
+      qb = qb.eq('asignatura_id', filtros.asignatura_id);
+    if (filtros.periodo_id)
+      qb = qb.eq('periodo_academico_id', filtros.periodo_id);
 
     const { data, error } = await qb;
     if (error) throw new BadRequestException(error.message);
@@ -209,18 +249,21 @@ export class EvaluacionService {
   }
 
   async getNotaPeriodo(id: string) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('nota_periodo')
-      .select(`
+      .select(
+        `
         *,
         estudiante:estudiante_id(primer_nombre, primer_apellido, numero_documento),
         asignatura:asignatura_id(nombre, area:area_id(nombre)),
         periodo:periodo_academico_id(nombre, numero)
-      `)
+      `,
+      )
       .eq('id', id)
       .single();
 
-    if (error || !data) throw new NotFoundException('Nota de periodo no encontrada');
+    if (error || !data)
+      throw new NotFoundException('Nota de periodo no encontrada');
     return data;
   }
 
@@ -234,7 +277,7 @@ export class EvaluacionService {
       else desempeno = 'Bajo';
     }
 
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('nota_periodo')
       .insert({ ...dto, desempeno })
       .select()
@@ -254,7 +297,7 @@ export class EvaluacionService {
       else desempeno = 'Bajo';
     }
 
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('nota_periodo')
       .update({ ...dto, desempeno })
       .eq('id', id)
@@ -267,7 +310,7 @@ export class EvaluacionService {
   }
 
   async deleteNotaPeriodo(id: string) {
-    const { data, error } = await this.supabase.admin
+    const { data, error } = await this.db.admin
       .from('nota_periodo')
       .delete()
       .eq('id', id)
