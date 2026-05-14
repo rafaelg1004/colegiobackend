@@ -125,4 +125,17 @@ export class ConfiguracionService {
     if (!data) throw new NotFoundException('Concepto de cobro no encontrado');
     return { message: 'Concepto de cobro eliminado', data };
   }
+
+  // ======================
+  // SEDES
+  // ======================
+  async getSedes() {
+    const { data, error } = await this.supabase.admin
+      .from('sede')
+      .select('*')
+      .order('nombre');
+
+    if (error) throw new BadRequestException(error.message);
+    return data || [];
+  }
 }

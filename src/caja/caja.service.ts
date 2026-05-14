@@ -64,12 +64,7 @@ export class CajaService {
     // Obtener todos los conceptos activos (con y sin inventario)
     const { data: conceptos, error } = await this.supabase.admin
       .from('concepto_cobro')
-      .select(
-        `
-        *,
-        categoria_inventario:categoria_inventario_id(*)
-      `,
-      )
+      .select('*')
       .eq('activo', true)
       .order('nombre');
 
@@ -87,7 +82,7 @@ export class CajaService {
 
     if (error) throw new BadRequestException(error.message);
     // Filtrar solo artículos con stock en el frontend
-    return (articulos || []).filter((a) => a.cantidad_stock > 0);
+    return (articulos || []).filter((a) => a.es_servicio || a.cantidad_stock > 0);
   }
 
   async getArticulosConcepto(conceptoId: string) {
@@ -115,15 +110,42 @@ export class CajaService {
   ) {
     const query = this.supabase.admin.query;
 
+    // Obtener el empleado_id real del usuario autenticado
+    let responsableId: string | null = null;
+    if (usuarioId) {
+      try {
+        const { data: perfil } = await this.supabase.admin
+          .from('perfil_usuario')
+          .select('empleado_id')
+          .eq('id', usuarioId)
+          .single();
+        responsableId = perfil?.empleado_id || null;
+      } catch (e) {
+        console.log('No se pudo obtener perfil para responsable_id');
+      }
+    }
+
+    console.log(`📦 Iniciando descuento de inventario para ${articulosVenta.length} artículos`);
+
     for (const articulo of articulosVenta) {
-      // Verificar stock disponible
+      console.log(`🔍 Procesando artículo ID: ${articulo.articulo_inventario_id}, Cantidad: ${articulo.cantidad}`);
+      
+      // Verificar stock disponible y si es servicio
       const { data: stockData } = await query(
-        'SELECT cantidad_stock, nombre FROM articulo_inventario WHERE id = $1',
+        'SELECT cantidad_stock, nombre, es_servicio FROM articulo_inventario WHERE id = $1',
         [articulo.articulo_inventario_id],
       );
 
       const stockActual = stockData?.[0]?.cantidad_stock || 0;
       const nombreArticulo = stockData?.[0]?.nombre || 'Artículo';
+      const esServicio = stockData?.[0]?.es_servicio || false;
+
+      if (esServicio) {
+        console.log(`ℹ️ "${nombreArticulo}" es un servicio. Saltando descuento de inventario.`);
+        continue;
+      }
+
+      console.log(`📊 Stock actual de "${nombreArticulo}": ${stockActual}`);
 
       if (stockActual < articulo.cantidad) {
         throw new BadRequestException(
@@ -131,31 +153,36 @@ export class CajaService {
         );
       }
 
-      // Registrar movimiento de salida en inventario
+      // 1. Registrar movimiento de salida en inventario
+      const insertData: any = {
+        articulo_id: articulo.articulo_inventario_id,
+        tipo: 'Salida',
+        cantidad: articulo.cantidad,
+        motivo: `Venta - Movimiento Caja #${movimientoCajaId}`,
+        fecha: new Date().toISOString(),
+      };
+
+      // Solo incluir responsable_id si tenemos un valor válido
+      if (responsableId) {
+        insertData.responsable_id = responsableId;
+      }
+
       const { error: movError } = await this.supabase.admin
         .from('movimiento_inventario')
-        .insert({
-          articulo_id: articulo.articulo_inventario_id,
-          tipo: 'Salida',
-          cantidad: articulo.cantidad,
-          motivo: `Venta - Movimiento Caja #${movimientoCajaId}`,
-          responsable_id: usuarioId || null,
-          fecha: new Date().toISOString(),
-        });
+        .insert(insertData);
 
       if (movError) {
+        console.error('❌ Error al insertar movimiento_inventario:', movError);
         throw new BadRequestException(
           `Error al registrar movimiento de inventario: ${movError.message}`,
         );
       }
+      console.log(`✅ Movimiento de inventario registrado para "${nombreArticulo}" (El stock se actualiza via Trigger)`);
     }
 
     return { message: 'Inventario actualizado' };
   }
 
-  // ======================
-  // BUSCAR ESTUDIANTES
-  // ======================
   async buscarEstudiantes(buscar: string) {
     const query = this.supabase.admin.query;
     const sql = `
@@ -191,6 +218,29 @@ export class CajaService {
         )
       ORDER BY e.primer_apellido, e.primer_nombre
       LIMIT 20
+    `;
+    const { data, error } = await query(sql, [`%${buscar}%`]);
+    if (error) throw new BadRequestException(error.message);
+    return data || [];
+  }
+
+  async buscarEmpleados(buscar: string) {
+    const query = this.supabase.admin.query;
+    const sql = `
+      SELECT 
+        id,
+        primer_nombre,
+        segundo_nombre,
+        primer_apellido,
+        segundo_apellido,
+        numero_documento,
+        cargo
+      FROM empleado
+      WHERE 
+        primer_nombre ILIKE $1 OR 
+        primer_apellido ILIKE $1 OR 
+        numero_documento ILIKE $1
+      LIMIT 10
     `;
     const { data, error } = await query(sql, [`%${buscar}%`]);
     if (error) throw new BadRequestException(error.message);
@@ -238,7 +288,8 @@ export class CajaService {
     let sql = `
       SELECT 
         mc.*,
-        u.email as registrado_por_email
+        u.email as registrado_por_email,
+        mc.detalles_json as conceptos_detalle
       FROM movimiento_caja mc
       LEFT JOIN users u ON mc.registrado_por = u.id
       WHERE 1=1
@@ -661,7 +712,24 @@ export class CajaService {
 
     // ===== INGRESO: Crear FACTURA + MOVIMIENTO =====
     if (dto.tipo === 'INGRESO' && dto.conceptos && dto.conceptos.length > 0) {
-      // 1. Crear FACTURA
+      // 1. Obtener acudiente del estudiante (necesario para factura)
+      let acudienteId: string | null = null;
+      if (dto.estudiante_id) {
+        const { data: acudienteData } = await this.supabase.admin
+          .from('estudiante_acudiente')
+          .select('acudiente_id')
+          .eq('estudiante_id', dto.estudiante_id)
+          .order('es_principal', { ascending: false }) // Priorizar el principal
+          .limit(1)
+          .single();
+        
+        acudienteId = acudienteData?.acudiente_id || null;
+      }
+
+      // Si no hay acudiente_id, la factura podría fallar si la FK es obligatoria.
+      // Pero usaremos null en vez del estudiante_id para evitar el error de FK.
+      
+      // 2. Crear FACTURA
       const prefijo = 'FAC';
       const numeroFactura = await this.generarNumeroFactura(prefijo);
 
@@ -676,15 +744,15 @@ export class CajaService {
             descuento_total: 0,
             iva_total: ivaTotal,
             total,
-            estado: 'Emitida', // Estado inicial para factura nueva
-            acudiente_id: dto.estudiante_id,
+            estado: 'Emitida',
+            acudiente_id: acudienteId,
             estudiante_id: dto.estudiante_id,
             observaciones: dto.observaciones,
           })
           .select()
           .single();
 
-      if (errorFactura) throw new BadRequestException(errorFactura.message);
+      if (errorFactura) throw new BadRequestException(`Error al crear factura: ${errorFactura.message}`);
       factura = facturaCreada;
       facturaId = facturaCreada.id;
 
@@ -725,8 +793,10 @@ export class CajaService {
         estudiante_nombre,
         numero_comprobante,
         registrado_por,
+        factura_id,
+        detalles_json,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
       RETURNING *
     `;
 
@@ -742,6 +812,8 @@ export class CajaService {
       dto.estudiante_nombre || null,
       numeroComprobante,
       usuarioId || null,
+      facturaId || null,
+      JSON.stringify(dto.conceptos || []),
     ];
 
     const {
@@ -810,21 +882,44 @@ export class CajaService {
               }
             : null,
         comprobante: numeroComprobante,
-        // Partida Doble - Representación contable
+        // Partida Doble - Representación contable dinámica
         partida_doble: {
           debe:
             dto.tipo === 'INGRESO'
-              ? [{ cuenta: 'CAJA/BANCOS', valor: total }]
+              ? [
+                  {
+                    cuenta:
+                      (dto as any).conceptos?.[0]?.cuenta_debito?.codigo ||
+                      '1105 (Caja)',
+                    valor: total,
+                  },
+                ]
               : [
                   {
-                    cuenta: dto.conceptos?.[0]?.descripcion || 'GASTO',
+                    cuenta:
+                      (dto as any).conceptos?.[0]?.cuenta_debito?.codigo ||
+                      '5105 (Gasto)',
                     valor: total,
                   },
                 ],
           haber:
             dto.tipo === 'INGRESO'
-              ? [{ cuenta: 'VENTAS/FACTURAS', valor: total }]
-              : [{ cuenta: 'CAJA/BANCOS', valor: total }],
+              ? [
+                  {
+                    cuenta:
+                      (dto as any).conceptos?.[0]?.cuenta_credito?.codigo ||
+                      '4105 (Ingreso)',
+                    valor: total,
+                  },
+                ]
+              : [
+                  {
+                    cuenta:
+                      (dto as any).conceptos?.[0]?.cuenta_credito?.codigo ||
+                      '1105 (Caja)',
+                    valor: total,
+                  },
+                ],
         },
       },
     };

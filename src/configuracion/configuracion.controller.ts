@@ -77,4 +77,9 @@ export class ConfiguracionController {
   deleteConceptoCobro(@Param('id') id: string) {
     return this.configuracionService.deleteConceptoCobro(id);
   }
+
+  @Get('sedes')
+  getSedes() {
+    return this.configuracionService.getSedes();
+  }
 }

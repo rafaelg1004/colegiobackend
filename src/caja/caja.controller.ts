@@ -45,6 +45,11 @@ export class CajaController {
     return this.cajaService.buscarEstudiantes(query || '');
   }
 
+  @Get('buscar-empleados')
+  buscarEmpleados(@Query('q') query: string) {
+    return this.cajaService.buscarEmpleados(query || '');
+  }
+
   @Get('siguiente-comprobante')
   async getSiguienteComprobante() {
     const numero = await this.cajaService.generarNumeroComprobante();
