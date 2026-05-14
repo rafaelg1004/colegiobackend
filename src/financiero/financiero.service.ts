@@ -8,7 +8,7 @@ import { GenerarPensionesDto } from './dto/generar-pensiones.dto';
 
 @Injectable()
 export class FinancieroService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(private supabase: SupabaseService) { }
 
   // ======================
   // CONCEPTOS DE COBRO
@@ -501,7 +501,7 @@ export class FinancieroService {
       conceptoFinal = { ...conceptoPension, es_articulo: true };
     }
 
-    const valorCobro = (conceptoFinal as any).es_articulo 
+    const valorCobro = (conceptoFinal as any).es_articulo
       ? Number((conceptoFinal as any).precio_venta || (conceptoFinal as any).precio_unitario || (conceptoFinal as any).valor || 0)
       : Number((conceptoFinal as any).valor || 0);
 
@@ -558,7 +558,7 @@ export class FinancieroService {
           descuento_total: 0,
           iva_total: 0,
           total: valorCobro,
-          estado: 'Emitida', 
+          estado: 'Emitida',
           estudiante_id: estudianteId,
           anio_lectivo_id: anio_lectivo_id || null,
           observaciones: `${conceptoFinal.nombre} - ${mes}/${anio}`,
@@ -603,13 +603,16 @@ export class FinancieroService {
     const { data: facturas, error: errorFac } = await this.supabase.admin
       .from('factura')
       .select('*')
-      .in('estado', ['Emitida', 'Pagada'])
+      .eq('estado', 'Emitida')
       .gte('fecha_emision', `${a}-${m.toString().padStart(2, '0')}-01`)
       .lt('fecha_emision', m === 12 ? `${a + 1}-01-01` : `${a}-${(m + 1).toString().padStart(2, '0')}-01`);
 
+    console.log(`🔍 getDeudores: Encontradas ${facturas?.length || 0} facturas para ${m}/${a}`);
+
     if (errorFac) throw new BadRequestException(errorFac.message);
-    // 2. Obtener datos de estudiantes y matrículas en bloque (para máxima velocidad)
+    // 2. Obtener datos de estudiantes y matrículas en bloque
     const estudianteIds = [...new Set(facturas.map(f => f.estudiante_id))];
+    if (estudianteIds.length === 0) return { deudores: [] };
     
     const [resEst, resMat] = await Promise.all([
       this.supabase.admin.from('estudiante').select('id, primer_nombre, primer_apellido').in('id', estudianteIds),
@@ -623,11 +626,11 @@ export class FinancieroService {
     const deudores = facturas.map(fac => {
       const est = estudiantesMap.get(fac.estudiante_id) as any;
       const mat = matriculasMap.get(fac.estudiante_id) as any;
-      
-      const nombreCompleto = est 
-        ? `${est.primer_nombre} ${est.primer_apellido}`.trim() 
+
+      const nombreCompleto = est
+        ? `${est.primer_nombre} ${est.primer_apellido}`.trim()
         : 'Estudiante no encontrado';
-      
+
       const grupoNombre = (mat as any)?.grupo && Array.isArray((mat as any).grupo) && (mat as any).grupo.length > 0
         ? (mat as any).grupo[0].nombre
         : 'N/A';
@@ -642,7 +645,8 @@ export class FinancieroService {
         anio: a,
         deuda: Number(fac.total || 0),
         estado: fac.estado,
-        fecha_emision: fac.fecha_emision
+        fecha_emision: fac.fecha_emision,
+        concepto: fac.observaciones || 'Factura de Venta'
       };
     });
 

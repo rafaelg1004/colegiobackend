@@ -41,7 +41,8 @@ export class CajaController {
   }
 
   @Get('buscar-estudiantes')
-  buscarEstudiantes(@Query('q') query: string) {
+  buscarEstudiantes(@Query('q') query?: string, @Query('id') id?: string) {
+    if (id) return this.cajaService.buscarEstudiantePorId(id);
     return this.cajaService.buscarEstudiantes(query || '');
   }
 

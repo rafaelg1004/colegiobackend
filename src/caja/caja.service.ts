@@ -179,8 +179,24 @@ export class CajaService {
       }
       console.log(`✅ Movimiento de inventario registrado para "${nombreArticulo}" (El stock se actualiza via Trigger)`);
     }
+  }
 
-    return { message: 'Inventario actualizado' };
+  async buscarEstudiantePorId(id: string) {
+    const { data, error } = await this.supabase.admin.rpc('fn_buscar_estudiante_por_id', { p_id: id });
+    if (error) {
+      // Fallback si la función RPC no existe
+      const sql = `
+        SELECT 
+          e.id, e.primer_nombre, e.segundo_nombre, e.primer_apellido, e.segundo_apellido,
+          e.numero_documento, e.tipo_documento
+        FROM estudiante e
+        WHERE e.id = $1
+      `;
+      const { data: direct, error: errD } = await this.supabase.admin.query(sql, [id]);
+      if (errD) throw new BadRequestException(errD.message);
+      return direct && direct.length > 0 ? direct[0] : null;
+    }
+    return data && data.length > 0 ? data[0] : data;
   }
 
   async buscarEstudiantes(buscar: string) {
