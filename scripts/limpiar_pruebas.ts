@@ -34,8 +34,12 @@ async function main() {
     console.log('Eliminando movimientos de inventario...');
     await client.query('DELETE FROM movimiento_inventario');
 
+    // ⚠️ IMPORTANTE: NO se toca el stock (cantidad_stock) del inventario.
+    // Solo se borran los movimientos (historial de entradas/salidas).
+
     console.log('\n✅ Base de datos de transacciones limpia.');
-    console.log('Ahora puedes realizar tus movimientos de prueba desde ceros.');
+    console.log('Se eliminaron: facturas, movimientos de caja, asientos contables y movimientos de inventario.');
+    console.log('El stock del inventario NO fue modificado.');
 
   } catch (err) {
     console.error('❌ Error durante la limpieza:', err);
