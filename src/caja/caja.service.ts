@@ -576,7 +576,7 @@ export class CajaService {
         descuento_total: 0,
         iva_total: ivaTotal,
         total,
-        estado: 'PENDIENTE',
+        estado: 'Emitida',
         acudiente_id: dto.acudiente_id,
         estudiante_id: dto.estudiante_id,
         anio_lectivo_id: dto.anio_lectivo_id,
@@ -594,7 +594,6 @@ export class CajaService {
       valor_iva: detalle.valor_iva,
       subtotal: detalle.cantidad * detalle.valor_unitario,
       concepto_cobro_id: detalle.concepto_cobro_id,
-      articulo_inventario_id: detalle.articulo_inventario_id,
       descripcion: detalle.descripcion,
     }));
 
@@ -651,24 +650,44 @@ export class CajaService {
     return { message: 'Factura actualizada', data };
   }
 
+  // El número de factura se genera automáticamente vía TRIGGER en la base de datos
   private async generarNumeroFactura(prefijo: string): Promise<string> {
-    const { data } = await this.supabase.admin
-      .from('factura')
-      .select('numero_factura')
-      .ilike('numero_factura', `${prefijo}-%`)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    return ''; 
+  }
 
-    let siguienteNumero = 1;
-    if (data && data.length > 0) {
-      const ultimo = data[0].numero_factura;
-      const match = ultimo.match(/-(\d+)$/);
-      if (match) {
-        siguienteNumero = parseInt(match[1]) + 1;
-      }
-    }
+  async getFacturasPendientesEstudiante(estudianteId: string) {
+    const query = this.supabase.admin.query;
+    
+    // 1. Obtener facturas pendientes
+    const sqlFacturas = `
+      SELECT id, numero_factura, fecha_emision, total, observaciones 
+      FROM factura 
+      WHERE estudiante_id = $1 AND estado = 'Emitida'
+      ORDER BY fecha_emision ASC
+    `;
+    
+    const { data: facturas, error: errorFac } = await query(sqlFacturas, [estudianteId]);
+    if (errorFac) throw new BadRequestException(errorFac.message);
+    if (!facturas || facturas.length === 0) return { data: [] };
 
-    return `${prefijo}-${siguienteNumero.toString().padStart(6, '0')}`;
+    // 2. Obtener detalles para todas las facturas encontradas
+    const facturaIds = facturas.map(f => f.id);
+    const sqlDetalles = `
+      SELECT id, factura_id, descripcion, cantidad, valor_unitario, valor_iva, subtotal, concepto_cobro_id
+      FROM factura_detalle
+      WHERE factura_id = ANY($1)
+    `;
+    
+    const { data: detalles, error: errorDet } = await query(sqlDetalles, [facturaIds]);
+    if (errorDet) throw new BadRequestException(errorDet.message);
+
+    // 3. Mapear detalles a sus facturas
+    const facturaConDetalles = facturas.map(f => ({
+      ...f,
+      factura_detalle: (detalles || []).filter(d => d.factura_id === f.id)
+    }));
+
+    return { data: facturaConDetalles };
   }
 
   // ======================
@@ -680,6 +699,7 @@ export class CajaService {
       tipo: 'INGRESO' | 'EGRESO';
       estudiante_id?: string;
       estudiante_nombre?: string;
+      factura_id?: string;
       conceptos?: Array<{
         concepto_cobro_id?: string;
         articulo_inventario_id?: string;
@@ -706,81 +726,124 @@ export class CajaService {
       }
     }
     const total = subtotal + ivaTotal;
-
     let factura: any = null;
     let facturaId: string | null = null;
-
-    // ===== INGRESO: Crear FACTURA + MOVIMIENTO =====
-    if (dto.tipo === 'INGRESO' && dto.conceptos && dto.conceptos.length > 0) {
-      // 1. Obtener acudiente del estudiante (necesario para factura)
-      let acudienteId: string | null = null;
-      if (dto.estudiante_id) {
-        const { data: acudienteData } = await this.supabase.admin
-          .from('estudiante_acudiente')
-          .select('acudiente_id')
-          .eq('estudiante_id', dto.estudiante_id)
-          .order('es_principal', { ascending: false }) // Priorizar el principal
-          .limit(1)
-          .single();
-        
-        acudienteId = acudienteData?.acudiente_id || null;
-      }
-
-      // Si no hay acudiente_id, la factura podría fallar si la FK es obligatoria.
-      // Pero usaremos null en vez del estudiante_id para evitar el error de FK.
-      
-      // 2. Crear FACTURA
-      const prefijo = 'FAC';
-      const numeroFactura = await this.generarNumeroFactura(prefijo);
-
-      const { data: facturaCreada, error: errorFactura } =
-        await this.supabase.admin
-          .from('factura')
-          .insert({
-            prefijo,
-            numero_factura: numeroFactura,
-            fecha_emision: new Date().toISOString().split('T')[0],
-            subtotal,
-            descuento_total: 0,
-            iva_total: ivaTotal,
-            total,
-            estado: 'Emitida',
-            acudiente_id: acudienteId,
-            estudiante_id: dto.estudiante_id,
-            observaciones: dto.observaciones,
-          })
-          .select()
-          .single();
-
-      if (errorFactura) throw new BadRequestException(`Error al crear factura: ${errorFactura.message}`);
-      factura = facturaCreada;
-      facturaId = facturaCreada.id;
-
-      // 2. Crear DETALLES de factura
-      const detallesInsert = dto.conceptos.map((c) => ({
-        factura_id: facturaId,
-        cantidad: c.cantidad,
-        valor_unitario: c.valor_unitario,
-        valor_iva: c.valor_iva,
-        subtotal: c.cantidad * c.valor_unitario,
-        concepto_cobro_id: c.concepto_cobro_id,
-        descripcion: c.descripcion,
-      }));
-
-      const { error: errorDetalles } = await this.supabase.admin
-        .from('factura_detalle')
-        .insert(detallesInsert);
-
-      if (errorDetalles) {
-        // Rollback: eliminar factura
-        await this.supabase.admin.from('factura').delete().eq('id', facturaId);
-        throw new BadRequestException(errorDetalles.message);
-      }
-    }
 
     // 3. Crear MOVIMIENTO DE CAJA (para ambos: INGRESO y EGRESO)
     const numeroComprobante = await this.generarNumeroComprobante();
 
+    // ===== INGRESO: Crear FACTURA + MOVIMIENTO =====
+    if (dto.tipo === 'INGRESO' && dto.conceptos && dto.conceptos.length > 0) {
+      if (dto.factura_id) {
+        // 1. Pagar factura existente
+        const sqlUpdate = `
+          UPDATE factura 
+          SET estado = 'Pagada', 
+              monto_pagado = $1, 
+              fecha_pago = $2 
+          WHERE id = $3 
+          RETURNING *
+        `;
+        const { data: resUpdate, error: errorFactura } = await this.supabase.admin.query(sqlUpdate, [
+          total,
+          new Date().toISOString().split('T')[0],
+          dto.factura_id
+        ]);
+
+        if (errorFactura) throw new BadRequestException(`Error al actualizar factura: ${errorFactura.message}`);
+        factura = resUpdate?.[0];
+        facturaId = factura?.id;
+
+        // 2. Crear registro en la tabla de PAGOS (para el Dashboard)
+        await this.supabase.admin.from('pago').insert({
+          factura_id: facturaId,
+          estudiante_id: dto.estudiante_id,
+          monto: total,
+          fecha_pago: new Date().toISOString().split('T')[0],
+          metodo_pago: dto.metodo_pago || 'EFECTIVO',
+          referencia: `Recibo ${numeroComprobante}`
+        });
+
+        // 3. Actualizar CARTERA (bajar la deuda)
+        await this.supabase.admin
+          .from('cartera')
+          .update({ 
+            saldo_pendiente: 0, 
+            estado: 'Al día',
+            ultima_actualizacion: new Date().toISOString()
+          })
+          .eq('estudiante_id', dto.estudiante_id);
+
+        // El inventario se descuenta automáticamente vía TRIGGER en la DB
+        // al crear el movimiento contable/caja.
+      } else {
+        // 1. Obtener acudiente del estudiante (necesario para factura)
+        let acudienteId: string | null = null;
+        if (dto.estudiante_id) {
+          const { data: acudienteData } = await this.supabase.admin
+            .from('estudiante_acudiente')
+            .select('acudiente_id')
+            .eq('estudiante_id', dto.estudiante_id)
+            .order('es_principal', { ascending: false }) // Priorizar el principal
+            .limit(1)
+            .single();
+          
+          acudienteId = acudienteData?.acudiente_id || null;
+        }
+
+        // 2. Crear FACTURA nueva
+        const prefijo = 'FAC';
+        const numeroFactura = await this.generarNumeroFactura(prefijo);
+
+        const { data: facturaCreada, error: errorFactura } =
+          await this.supabase.admin
+            .from('factura')
+            .insert({
+              prefijo,
+              numero_factura: numeroFactura,
+              fecha_emision: new Date().toISOString().split('T')[0],
+              subtotal,
+              descuento_total: 0,
+              iva_total: ivaTotal,
+              total,
+              estado: 'Pagada',  // Se paga de inmediato al registrar en Caja
+              monto_pagado: total,
+              fecha_pago: new Date().toISOString().split('T')[0],
+              acudiente_id: acudienteId,
+              estudiante_id: dto.estudiante_id,
+              observaciones: dto.observaciones,
+            })
+            .select()
+            .single();
+
+        if (errorFactura) throw new BadRequestException(`Error al crear factura: ${errorFactura.message}`);
+        factura = facturaCreada;
+        facturaId = facturaCreada.id;
+
+        // 3. Crear DETALLES de factura nueva
+        const detallesInsert = dto.conceptos.map((c) => ({
+          factura_id: facturaId,
+          cantidad: c.cantidad,
+          valor_unitario: c.valor_unitario,
+          valor_iva: c.valor_iva,
+          subtotal: c.cantidad * c.valor_unitario,
+          concepto_cobro_id: c.concepto_cobro_id,
+          descripcion: c.descripcion,
+        }));
+
+        const { error: errorDetalles } = await this.supabase.admin
+          .from('factura_detalle')
+          .insert(detallesInsert);
+
+        if (errorDetalles) {
+          // Rollback: eliminar factura
+          await this.supabase.admin.from('factura').delete().eq('id', facturaId);
+          throw new BadRequestException(errorDetalles.message);
+        }
+      }
+    }
+
+    // 3. Crear MOVIMIENTO DE CAJA (para ambos: INGRESO y EGRESO)
     const query = this.supabase.admin.query;
     const sql = `
       INSERT INTO movimiento_caja (

@@ -4,6 +4,7 @@ import {
   CreateConceptoDto, UpdateConceptoDto, CreateDescuentoDto,
   CreateFacturaDto, FacturacionMasivaDto, CreatePagoDto,
 } from './dto/financiero.dto';
+import { GenerarPensionesDto } from './dto/generar-pensiones.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -138,5 +139,25 @@ export class FinancieroController {
   @Roles('admin', 'rector', 'coordinador')
   getResumen(@Query('anio_lectivo_id') anioLectivoId?: string) {
     return this.finService.getResumenFinanciero(anioLectivoId);
+  }
+
+  @Post('generar-pensiones')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'secretaria')
+  generarPensiones(@Body() dto: GenerarPensionesDto) {
+    return this.finService.generarPensionesMasivas(dto);
+  }
+
+  @Get('deudores')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador', 'secretaria')
+  getDeudores(
+    @Query('mes') mes?: string,
+    @Query('anio') anio?: string,
+  ) {
+    return this.finService.getDeudores(
+      mes ? parseInt(mes) : undefined,
+      anio ? parseInt(anio) : undefined,
+    );
   }
 }

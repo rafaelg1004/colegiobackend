@@ -4,6 +4,7 @@ import {
   CreateConceptoDto, UpdateConceptoDto, CreateDescuentoDto,
   CreateFacturaDto, FacturacionMasivaDto, CreatePagoDto,
 } from './dto/financiero.dto';
+import { GenerarPensionesDto } from './dto/generar-pensiones.dto';
 
 @Injectable()
 export class FinancieroService {
@@ -424,11 +425,15 @@ export class FinancieroService {
 
     const totalFacturado = (facturas || [])
       .filter((f) => f.estado !== 'Anulada')
-      .reduce((sum, f) => sum + (f.total || 0), 0);
+      .reduce((sum, f) => sum + Number(f.total || 0), 0);
 
-    const totalRecaudado = (pagos || []).reduce((sum, p) => sum + (p.monto || 0), 0);
+    const totalRecaudado = (facturas || [])
+      .filter((f) => f.estado === 'Pagada')
+      .reduce((sum, f) => sum + Number(f.total || 0), 0);
 
-    const totalPendiente = (cartera || []).reduce((sum, c) => sum + (c.saldo_pendiente || 0), 0);
+    const totalPendiente = (facturas || [])
+      .filter((f) => f.estado === 'Emitida')
+      .reduce((sum, f) => sum + Number(f.total || 0), 0);
 
     const enMora = (cartera || []).filter((c) => c.estado === 'En mora').length;
     const cobroJuridico = (cartera || []).filter((c) => c.estado === 'En cobro jurídico').length;
@@ -453,5 +458,194 @@ export class FinancieroService {
         cobro_juridico: cobroJuridico,
       },
     };
+  }
+
+  // ======================
+  // GENERACIÓN Y DEUDORES
+  // ======================
+
+  async generarPensionesMasivas(dto: GenerarPensionesDto) {
+    const { mes, anio, anio_lectivo_id, articulo_id, concepto_cobro_id } = dto;
+
+    let conceptoFinal: { id: string, nombre: string, valor: number, es_articulo: boolean };
+
+    if (articulo_id) {
+      const { data: art, error } = await this.supabase.admin
+        .from('articulo_inventario')
+        .select('*')
+        .eq('id', articulo_id)
+        .single();
+      if (error || !art) throw new BadRequestException('Artículo no encontrado.');
+      conceptoFinal = { id: art.id, nombre: art.nombre, valor: parseFloat(art.precio_venta) || 0, es_articulo: true };
+    } else if (concepto_cobro_id) {
+      const { data: conc, error } = await this.supabase.admin
+        .from('concepto_cobro')
+        .select('*')
+        .eq('id', concepto_cobro_id)
+        .single();
+      if (error || !conc) throw new BadRequestException('Concepto de cobro no encontrado.');
+      conceptoFinal = { id: conc.id, nombre: conc.nombre, valor: parseFloat(conc.valor) || 0, es_articulo: false };
+    } else {
+      // 1. Comportamiento por defecto: Encontrar el concepto de pensión
+      const { data: conceptoPension, error: errorConcepto } = await this.supabase.admin
+        .from('articulo_inventario')
+        .select('*')
+        .or('nombre.ilike.%pensión%,nombre.ilike.%pension%')
+        .eq('es_servicio', true)
+        .limit(1)
+        .single();
+
+      if (errorConcepto || !conceptoPension) {
+        throw new BadRequestException('No se encontró el servicio de pensión en el inventario. Especifica un ID o asegúrate de tener un artículo de servicio que contenga la palabra "pensión".');
+      }
+      conceptoFinal = { ...conceptoPension, es_articulo: true };
+    }
+
+    const valorCobro = (conceptoFinal as any).es_articulo 
+      ? Number((conceptoFinal as any).precio_venta || (conceptoFinal as any).precio_unitario || (conceptoFinal as any).valor || 0)
+      : Number((conceptoFinal as any).valor || 0);
+
+    // 2. Obtener estudiantes activos
+    const { data: matriculas, error: errorMatriculas } = await this.supabase.admin
+      .from('matricula')
+      .select('estudiante_id')
+      .eq('estado', 'Activa');
+
+    if (errorMatriculas) throw new BadRequestException('Error al obtener estudiantes activos.');
+    if (!matriculas || matriculas.length === 0) return { message: 'No hay estudiantes activos.', generadas: 0 };
+
+    let facturasGeneradas = 0;
+
+    // 2. Obtener el último número de factura una sola vez
+    const prefijo = 'FAC';
+    const { data: ultimasFacturas } = await this.supabase.admin
+      .from('factura')
+      .select('numero_factura')
+      .ilike('numero_factura', `${prefijo}-%`)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    let ultimoNumero = 0;
+    if (ultimasFacturas && ultimasFacturas.length > 0) {
+      const match = ultimasFacturas[0].numero_factura.match(/-(\d+)$/);
+      if (match) {
+        ultimoNumero = parseInt(match[1], 10) || 0;
+      }
+    }
+
+    // 2. Bucle de generación (La DB se encarga del número FAC- automáticamente)
+    for (const mat of matriculas) {
+      const estudianteId = mat.estudiante_id;
+
+      // Check if already has invoice for this concept this month
+      const { data: facturasExistentes } = await this.supabase.admin
+        .from('factura_detalle')
+        .select('id, factura:factura_id(estudiante_id, fecha_emision)')
+        .eq('descripcion', conceptoFinal.nombre)
+        .eq('factura.estudiante_id', estudianteId)
+        .gte('factura.fecha_emision', `${anio}-${mes.toString().padStart(2, '0')}-01`)
+        .lt('factura.fecha_emision', mes === 12 ? `${anio + 1}-01-01` : `${anio}-${(mes + 1).toString().padStart(2, '0')}-01`);
+
+      if (facturasExistentes && facturasExistentes.length > 0) {
+        continue;
+      }
+
+      const { data: nuevaFactura, error: errorFact } = await this.supabase.admin
+        .from('factura')
+        .insert({
+          fecha_emision: new Date().toISOString().split('T')[0],
+          subtotal: valorCobro,
+          descuento_total: 0,
+          iva_total: 0,
+          total: valorCobro,
+          estado: 'Emitida', 
+          estudiante_id: estudianteId,
+          anio_lectivo_id: anio_lectivo_id || null,
+          observaciones: `${conceptoFinal.nombre} - ${mes}/${anio}`,
+        })
+        .select('id')
+        .single();
+
+      if (errorFact) {
+        console.error('Error creando factura para', estudianteId, errorFact);
+        continue;
+      }
+
+      // Crear detalle
+      const { error: errorDetalle } = await this.supabase.admin
+        .from('factura_detalle')
+        .insert({
+          factura_id: nuevaFactura.id,
+          cantidad: 1,
+          valor_unitario: valorCobro,
+          valor_iva: 0,
+          subtotal: valorCobro,
+          concepto_cobro_id: conceptoFinal.es_articulo ? null : conceptoFinal.id,
+          articulo_inventario_id: conceptoFinal.es_articulo ? conceptoFinal.id : null,
+          descripcion: conceptoFinal.nombre,
+        });
+
+      if (errorDetalle) {
+        console.error('Error creando detalle para factura', nuevaFactura.id, errorDetalle);
+      }
+
+      facturasGeneradas++;
+    }
+
+    return { message: 'Proceso completado', generadas: facturasGeneradas };
+  }
+
+  async getDeudores(mes?: number, anio?: number) {
+    const m = mes || new Date().getMonth() + 1;
+    const a = anio || new Date().getFullYear();
+
+    // 1. Obtener facturas pendientes del mes
+    const { data: facturas, error: errorFac } = await this.supabase.admin
+      .from('factura')
+      .select('*')
+      .in('estado', ['Emitida', 'Pagada'])
+      .gte('fecha_emision', `${a}-${m.toString().padStart(2, '0')}-01`)
+      .lt('fecha_emision', m === 12 ? `${a + 1}-01-01` : `${a}-${(m + 1).toString().padStart(2, '0')}-01`);
+
+    if (errorFac) throw new BadRequestException(errorFac.message);
+    // 2. Obtener datos de estudiantes y matrículas en bloque (para máxima velocidad)
+    const estudianteIds = [...new Set(facturas.map(f => f.estudiante_id))];
+    
+    const [resEst, resMat] = await Promise.all([
+      this.supabase.admin.from('estudiante').select('id, primer_nombre, primer_apellido').in('id', estudianteIds),
+      this.supabase.admin.from('matricula').select('estudiante_id, estado, grupo:grupo_id(nombre)').in('estudiante_id', estudianteIds)
+    ]);
+
+    const estudiantesMap = new Map((resEst.data || []).map(e => [e.id, e]));
+    const matriculasMap = new Map((resMat.data || []).map(m => [m.estudiante_id, m]));
+
+    // 3. Juntar todo
+    const deudores = facturas.map(fac => {
+      const est = estudiantesMap.get(fac.estudiante_id) as any;
+      const mat = matriculasMap.get(fac.estudiante_id) as any;
+      
+      const nombreCompleto = est 
+        ? `${est.primer_nombre} ${est.primer_apellido}`.trim() 
+        : 'Estudiante no encontrado';
+      
+      const grupoNombre = (mat as any)?.grupo && Array.isArray((mat as any).grupo) && (mat as any).grupo.length > 0
+        ? (mat as any).grupo[0].nombre
+        : 'N/A';
+
+      return {
+        factura_id: fac.id,
+        numero_factura: fac.numero_factura,
+        estudiante_id: fac.estudiante_id,
+        estudiante_nombre: nombreCompleto,
+        grado: grupoNombre,
+        mes: m,
+        anio: a,
+        deuda: Number(fac.total || 0),
+        estado: fac.estado,
+        fecha_emision: fac.fecha_emision
+      };
+    });
+
+    return { deudores };
   }
 }

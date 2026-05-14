@@ -50,6 +50,11 @@ export class CajaController {
     return this.cajaService.buscarEmpleados(query || '');
   }
 
+  @Get('estudiantes/:id/facturas-pendientes')
+  getFacturasPendientesEstudiante(@Param('id') id: string) {
+    return this.cajaService.getFacturasPendientesEstudiante(id);
+  }
+
   @Get('siguiente-comprobante')
   async getSiguienteComprobante() {
     const numero = await this.cajaService.generarNumeroComprobante();
