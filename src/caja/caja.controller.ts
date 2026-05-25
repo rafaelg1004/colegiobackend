@@ -6,6 +6,7 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Body,
   Query,
   Param,
@@ -87,6 +88,14 @@ export class CajaController {
   @Delete('movimientos/:id')
   eliminarMovimiento(@Param('id') id: string) {
     return this.cajaService.eliminarMovimiento(id);
+  }
+
+  @Patch('movimientos/:id/observacion')
+  actualizarObservacionMovimiento(
+    @Param('id') id: string,
+    @Body() data: { observacion: string },
+  ) {
+    return this.cajaService.actualizarObservacionMovimiento(id, data.observacion);
   }
 
   @Get('resumen')

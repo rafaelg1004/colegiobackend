@@ -442,6 +442,19 @@ export class CajaService {
     return { message: 'Movimiento eliminado' };
   }
 
+  async actualizarObservacionMovimiento(id: string, observacion: string) {
+    const { data, error } = await this.supabase.admin
+      .from('movimiento_caja')
+      .update({ observacion })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    if (!data) throw new NotFoundException('Movimiento no encontrado');
+    return { message: 'Observación actualizada', data };
+  }
+
   // ======================
   // RESUMEN Y REPORTES
   // ======================
