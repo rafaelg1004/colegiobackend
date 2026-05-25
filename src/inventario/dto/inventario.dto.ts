@@ -1,6 +1,7 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsInt, IsIn, Min,
+  IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsInt, IsIn, Min, IsBoolean,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateArticuloDto {
   @IsString() @IsNotEmpty()
@@ -12,17 +13,36 @@ export class CreateArticuloDto {
   @IsOptional() @IsString()
   codigo_interno?: string;
 
-  @IsOptional() @IsInt() @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   cantidad_stock?: number;
 
-  @IsOptional() @IsInt() @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   cantidad_minima?: number;
 
   @IsOptional() @IsString()
   unidad_medida?: string;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   precio_unitario?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  precio_venta?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  es_servicio?: boolean;
 
   @IsOptional() @IsString()
   ubicacion?: string;
@@ -38,11 +58,27 @@ export class UpdateArticuloDto {
   @IsOptional() @IsString()
   descripcion?: string;
 
-  @IsOptional() @IsInt() @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   cantidad_minima?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   precio_unitario?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  precio_venta?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  es_servicio?: boolean;
 
   @IsOptional() @IsString()
   ubicacion?: string;
