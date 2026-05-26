@@ -38,6 +38,9 @@ export class UpdateInstitucionDto {
   nombre?: string;
 
   @IsOptional() @IsString()
+  nit?: string;
+
+  @IsOptional() @IsString()
   direccion?: string;
 
   @IsOptional() @IsString()
