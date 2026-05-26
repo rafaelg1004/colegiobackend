@@ -442,17 +442,61 @@ export class CajaService {
     return { message: 'Movimiento eliminado' };
   }
 
-  async actualizarObservacionMovimiento(id: string, observacion: string) {
+  async actualizarMovimiento(id: string, dto: { observacion?: string; fecha?: string }) {
+    // 1. Obtener el movimiento existente
+    const { data: existente, error: errExistente } = await this.supabase.admin
+      .from('movimiento_caja')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (errExistente || !existente) {
+      throw new NotFoundException('Movimiento no encontrado');
+    }
+
+    // 2. Preparar el objeto de actualización
+    const updateData: any = {};
+    if (dto.observacion !== undefined) updateData.observacion = dto.observacion;
+    if (dto.fecha !== undefined) updateData.fecha = dto.fecha;
+
+    // 3. Si hay fecha nueva y el movimiento tiene factura_id asociada, podemos actualizar también la fecha de la factura y su pago!
+    if (dto.fecha && existente.factura_id) {
+      try {
+        // Actualizar fecha_emision y fecha_pago de la factura
+        await this.supabase.admin
+          .from('factura')
+          .update({ 
+            fecha_emision: dto.fecha,
+            fecha_pago: dto.fecha
+          })
+          .eq('id', existente.factura_id);
+          
+        // Actualizar fecha_pago del pago asociado
+        await this.supabase.admin
+          .from('pago')
+          .update({ 
+            fecha_pago: dto.fecha
+          })
+          .eq('factura_id', existente.factura_id);
+      } catch (e) {
+        console.error('Error al actualizar fecha de factura/pago asociada:', e);
+      }
+    }
+
+    // 4. Actualizar el movimiento de caja
     const { data, error } = await this.supabase.admin
       .from('movimiento_caja')
-      .update({ observacion })
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw new BadRequestException(error.message);
-    if (!data) throw new NotFoundException('Movimiento no encontrado');
-    return { message: 'Observación actualizada', data };
+    return { message: 'Movimiento actualizado', data };
+  }
+
+  async actualizarObservacionMovimiento(id: string, observacion: string) {
+    return this.actualizarMovimiento(id, { observacion });
   }
 
   // ======================
@@ -739,11 +783,14 @@ export class CajaService {
       }>;
       observaciones?: string;
       metodo_pago?: string;
+      fecha?: string;
     },
     usuarioId?: string,
   ) {
     console.log('=== crearTransaccion llamado ===');
     console.log('DTO:', JSON.stringify(dto, null, 2));
+
+    const fechaTransaccion = dto.fecha || new Date().toISOString().split('T')[0];
 
     // Calcular totales
     let subtotal = 0;
@@ -775,7 +822,7 @@ export class CajaService {
         `;
         const { data: resUpdate, error: errorFactura } = await this.supabase.admin.query(sqlUpdate, [
           total,
-          new Date().toISOString().split('T')[0],
+          fechaTransaccion,
           dto.factura_id
         ]);
 
@@ -788,7 +835,7 @@ export class CajaService {
           factura_id: facturaId,
           estudiante_id: dto.estudiante_id,
           monto: total,
-          fecha_pago: new Date().toISOString().split('T')[0],
+          fecha_pago: fechaTransaccion,
           metodo_pago: dto.metodo_pago || 'EFECTIVO',
           referencia: `Recibo ${numeroComprobante}`
         });
@@ -830,14 +877,14 @@ export class CajaService {
             .insert({
               prefijo,
               numero_factura: numeroFactura,
-              fecha_emision: new Date().toISOString().split('T')[0],
+              fecha_emision: fechaTransaccion,
               subtotal,
               descuento_total: 0,
               iva_total: ivaTotal,
               total,
               estado: 'Pagada',  // Se paga de inmediato al registrar en Caja
               monto_pagado: total,
-              fecha_pago: new Date().toISOString().split('T')[0],
+              fecha_pago: fechaTransaccion,
               acudiente_id: acudienteId,
               estudiante_id: dto.estudiante_id,
               observaciones: dto.observaciones,
@@ -898,7 +945,7 @@ export class CajaService {
         ? `Factura ${(factura as any).numero_factura}`
         : dto.conceptos?.[0]?.descripcion || 'Movimiento',
       total,
-      new Date().toISOString().split('T')[0],
+      fechaTransaccion,
       dto.observaciones || null,
       dto.estudiante_id || null,
       dto.estudiante_nombre || null,

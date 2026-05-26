@@ -98,6 +98,14 @@ export class CajaController {
     return this.cajaService.actualizarObservacionMovimiento(id, data.observacion);
   }
 
+  @Patch('movimientos/:id')
+  actualizarMovimiento(
+    @Param('id') id: string,
+    @Body() data: { observacion?: string; fecha?: string },
+  ) {
+    return this.cajaService.actualizarMovimiento(id, data);
+  }
+
   @Get('resumen')
   getResumen(
     @Query('fecha_desde') fechaDesde?: string,
