@@ -33,18 +33,19 @@ function tokenize(str: string): string[] {
 }
 
 function parseRelation(token: string): ParsedRelation | null {
-  const match = token.match(/^(\w+):(\w+)\((.*)\)$/);
+  const match = token.match(/^(\w+):(\w+)(?:!(\w+))?\((.*)\)$/);
   if (!match) {
     const joinMatch = token.match(/^(\w+)\((.*)\)$/);
     if (joinMatch) {
       const [, table, inner] = joinMatch;
       const innerTokens = tokenize(inner);
       const columns: string[] = [];
-      let nestedRelation: ParsedRelation | null = null;
+      let nestedRelation: ParsedRelation | undefined;
 
       for (const t of innerTokens) {
         if (t.includes(':')) {
-          nestedRelation = parseRelation(t);
+          const parsed = parseRelation(t);
+          if (parsed) nestedRelation = parsed;
         } else {
           columns.push(t);
         }
@@ -61,14 +62,18 @@ function parseRelation(token: string): ParsedRelation | null {
     return null;
   }
 
-  const [, alias, fkColumn, inner] = match;
-  const targetTable = fkColumn.replace(/_id$/, '');
+  const [, alias, tableOrFk, fkOptional, inner] = match;
+  
+  // Si usa la sintaxis alias:table!fkColumn(...)
+  let fkColumn = fkOptional || tableOrFk;
+  let targetTable = fkOptional ? tableOrFk : fkColumn.replace(/_id$/, '');
+
   const innerTokens = tokenize(inner);
   const columns: string[] = [];
   const nested: ParsedRelation[] = [];
 
   for (const t of innerTokens) {
-    if (t.includes(':')) {
+    if (t.includes(':') || t.includes('!')) {
       const n = parseRelation(t);
       if (n) nested.push(n);
     } else {

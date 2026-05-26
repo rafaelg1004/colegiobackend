@@ -16,7 +16,7 @@ export class ContabilidadService {
   async getCuentas(filtros: QueryCuentaContableDto) {
     let qb = this.supabase.admin
       .from('cuenta_contable')
-      .select('*, padre:padre_id(codigo, nombre)')
+      .select('*')
       .order('codigo');
 
     if (filtros.tipo) qb = qb.eq('tipo', filtros.tipo);
@@ -33,7 +33,7 @@ export class ContabilidadService {
   async getCuenta(id: string) {
     const { data, error } = await this.supabase.admin
       .from('cuenta_contable')
-      .select('*, padre:padre_id(codigo, nombre), hijos:cuenta_contable!padre_id(*)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -146,7 +146,17 @@ export class ContabilidadService {
 
     const { data, error } = await qb;
     if (error) throw new BadRequestException(error.message);
-    return data;
+    
+    // El mock DatabaseService devuelve arreglos para las relaciones 1:1, los desempaquetamos
+    const dataUnwrapped = data?.map(mov => ({
+      ...mov,
+      cuenta: Array.isArray(mov.cuenta) ? mov.cuenta[0] : mov.cuenta,
+      factura: Array.isArray(mov.factura) ? mov.factura[0] : mov.factura,
+      pago: Array.isArray(mov.pago) ? mov.pago[0] : mov.pago,
+      nomina: Array.isArray(mov.nomina) ? mov.nomina[0] : mov.nomina,
+    }));
+
+    return dataUnwrapped;
   }
 
   async crearMovimiento(dto: CreateMovimientoContableDto) {
@@ -160,6 +170,12 @@ export class ContabilidadService {
       .single();
 
     if (error) throw new BadRequestException(error.message);
+    
+    // Desempaquetar la cuenta si viene como arreglo
+    if (data && Array.isArray(data.cuenta)) {
+      data.cuenta = data.cuenta[0];
+    }
+    
     return { message: 'Movimiento contable registrado', data };
   }
 
@@ -189,20 +205,33 @@ export class ContabilidadService {
       if (!saldos[mov.cuenta_contable_id]) {
         saldos[mov.cuenta_contable_id] = { debe: 0, haber: 0 };
       }
-      saldos[mov.cuenta_contable_id].debe += mov.debe || 0;
-      saldos[mov.cuenta_contable_id].haber += mov.haber || 0;
+      saldos[mov.cuenta_contable_id].debe += Number(mov.debe || 0);
+      saldos[mov.cuenta_contable_id].haber += Number(mov.haber || 0);
     }
 
     const balance = (cuentas || []).map((cuenta) => {
-      const sal = saldos[cuenta.id] || { debe: 0, haber: 0 };
+      // Sumar los movimientos directos y los de todas sus subcuentas (su código es prefijo)
+      const descendientes = cuentas.filter(c => c.codigo.startsWith(cuenta.codigo));
+      
+      let totalDebe = 0;
+      let totalHaber = 0;
+      
+      for (const desc of descendientes) {
+        const sal = saldos[desc.id];
+        if (sal) {
+          totalDebe += sal.debe;
+          totalHaber += sal.haber;
+        }
+      }
+
       const saldo = cuenta.naturaleza === 'Débito'
-        ? sal.debe - sal.haber
-        : sal.haber - sal.debe;
+        ? totalDebe - totalHaber
+        : totalHaber - totalDebe;
 
       return {
         ...cuenta,
-        debe: sal.debe,
-        haber: sal.haber,
+        debe: totalDebe,
+        haber: totalHaber,
         saldo,
       };
     });

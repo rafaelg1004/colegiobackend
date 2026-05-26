@@ -70,12 +70,21 @@ export class ConfiguracionService {
   async getConceptosCobro() {
     const { data, error } = await this.supabase.admin
       .from('concepto_cobro')
-      .select('*, categoria_inventario:categoria_inventario_id(*)')
+      .select('*, categoria_inventario:categoria_inventario_id(*), cuenta_debito:cuenta_contable!cuenta_debito_id(codigo, nombre), cuenta_credito:cuenta_contable!cuenta_credito_id(codigo, nombre)')
       .eq('activo', true)
       .order('nombre');
 
     if (error) throw new BadRequestException(error.message);
-    return data || [];
+    
+    // Unwrap the array values from Supabase mock relationships
+    const parsedData = data?.map(item => ({
+      ...item,
+      cuenta_debito: Array.isArray(item.cuenta_debito) ? item.cuenta_debito[0] : item.cuenta_debito,
+      cuenta_credito: Array.isArray(item.cuenta_credito) ? item.cuenta_credito[0] : item.cuenta_credito,
+      categoria_inventario: Array.isArray(item.categoria_inventario) ? item.categoria_inventario[0] : item.categoria_inventario
+    }));
+
+    return parsedData || [];
   }
 
   async crearConceptoCobro(dto: any) {

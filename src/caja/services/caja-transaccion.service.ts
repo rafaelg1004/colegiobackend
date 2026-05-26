@@ -237,6 +237,102 @@ export class CajaTransaccionService {
       usuarioEmail = userData?.email || null;
     }
 
+    // --- INTEGRACIÓN CONTABLE (PARTIDA DOBLE) ---
+    const movimientosContables: any[] = [];
+    const fechaActual = dto.fecha || new Date().toISOString().split('T')[0];
+    const descripcionGeneral = `${dto.tipo}: ${dto.conceptos?.map(c => c.descripcion).join(', ') || 'Transacción de Caja'} - ${dto.estudiante_nombre || 'General'}`;
+
+    try {
+      // Intentar obtener las cuentas de los conceptos o usar por defecto
+      let cuentaDebitoId = (dto.conceptos?.[0] as any)?.cuenta_debito_id;
+      let cuentaCreditoId = (dto.conceptos?.[0] as any)?.cuenta_credito_id;
+
+      // Buscar IDs de cuentas por defecto si no vienen
+      if (!cuentaDebitoId || !cuentaCreditoId) {
+        const codigosBuscar: string[] = [];
+        
+        let cuentaIngresoPorDefecto = '4105'; // Matrículas por defecto
+        let cuentaEgresoPorDefecto = '5105';  // Pagos Docentes por defecto
+
+        if (dto.conceptos?.length) {
+          const desc = dto.conceptos[0].descripcion.toLowerCase();
+          
+          // Consultar la tabla tgen_clasificacion_caja dinámicamente
+          const { data: reglas } = await this.supabase.admin
+            .from('tgen_clasificacion_caja')
+            .select('*')
+            .eq('tipo', dto.tipo);
+            
+          let matchCodigo = null;
+          if (reglas) {
+            for (const regla of reglas) {
+              const palabras = regla.palabras_clave.split(',');
+              if (palabras.some((p: string) => desc.includes(p.trim().toLowerCase()))) {
+                matchCodigo = regla.cuenta_codigo;
+                break;
+              }
+            }
+          }
+
+          if (dto.tipo === 'INGRESO') {
+            if (matchCodigo) cuentaIngresoPorDefecto = matchCodigo;
+            else if (!desc.includes('matricula') && !desc.includes('matrícula')) cuentaIngresoPorDefecto = '4140'; // Otras Actividades
+          } else if (dto.tipo === 'EGRESO') {
+            if (matchCodigo) cuentaEgresoPorDefecto = matchCodigo;
+          }
+        }
+
+        if (!cuentaDebitoId) codigosBuscar.push(dto.tipo === 'INGRESO' ? '1105' : cuentaEgresoPorDefecto);
+        if (!cuentaCreditoId) codigosBuscar.push(dto.tipo === 'INGRESO' ? cuentaIngresoPorDefecto : '1105');
+        
+        const { data: cuentasDefecto } = await this.supabase.admin
+          .from('cuenta_contable')
+          .select('id, codigo')
+          .in('codigo', codigosBuscar);
+
+        if (cuentasDefecto && cuentasDefecto.length > 0) {
+          if (!cuentaDebitoId) {
+            const codigoBuscado = dto.tipo === 'INGRESO' ? '1105' : '5105';
+            cuentaDebitoId = cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id;
+          }
+          if (!cuentaCreditoId) {
+            const codigoBuscado = dto.tipo === 'INGRESO' ? cuentaIngresoPorDefecto : '1105';
+            cuentaCreditoId = cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id;
+          }
+        }
+      }
+
+      // Si encontramos ambas cuentas, crear los asientos
+      if (cuentaDebitoId && cuentaCreditoId) {
+        // Asiento DEBE
+        movimientosContables.push({
+          descripcion: descripcionGeneral,
+          fecha: fechaActual,
+          debe: total,
+          haber: 0,
+          cuenta_contable_id: cuentaDebitoId,
+          factura_id: facturaId || null,
+        });
+
+        // Asiento HABER
+        movimientosContables.push({
+          descripcion: descripcionGeneral,
+          fecha: fechaActual,
+          debe: 0,
+          haber: total,
+          cuenta_contable_id: cuentaCreditoId,
+          factura_id: facturaId || null,
+        });
+
+        // Insertar en la BD
+        await this.supabase.admin.from('movimiento_contable').insert(movimientosContables);
+      }
+    } catch (error) {
+      console.error('Error al registrar partida doble en contabilidad:', error);
+      // No lanzamos excepción para no bloquear la transacción de caja, pero queda en log
+    }
+    // --------------------------------------------
+
     return {
       message:
         dto.tipo === 'INGRESO'
