@@ -39,7 +39,7 @@ export class CajaReporteService {
         ingresos: porConceptoIngreso,
         egresos: porConceptoEgreso,
       },
-      movimientos: movimientos.slice(0, 50),
+      movimientos: movimientos,
     };
   }
 
