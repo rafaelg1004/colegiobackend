@@ -5,6 +5,7 @@ export interface MovimientoCaja {
   concepto: string;
   monto: number;
   estudiante_id?: string;
+  empleado_id?: string;
   estudiante_nombre?: string;
   observacion?: string;
   registrado_por?: string;

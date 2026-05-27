@@ -17,6 +17,7 @@ export class CajaTransaccionService {
     dto: {
       tipo: 'INGRESO' | 'EGRESO';
       estudiante_id?: string;
+      empleado_id?: string;
       estudiante_nombre?: string;
       factura_id?: string;
       conceptos?: Array<{
@@ -163,13 +164,14 @@ export class CajaTransaccionService {
         fecha,
         observacion,
         estudiante_id,
+        empleado_id,
         estudiante_nombre,
         numero_comprobante,
         registrado_por,
         factura_id,
         detalles_json,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
       RETURNING *
     `;
 
@@ -182,6 +184,7 @@ export class CajaTransaccionService {
       fechaTransaccion,
       dto.observaciones || null,
       dto.estudiante_id || null,
+      dto.empleado_id || null,
       dto.estudiante_nombre || null,
       numeroComprobante,
       usuarioId || null,

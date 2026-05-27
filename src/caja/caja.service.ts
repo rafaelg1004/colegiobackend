@@ -142,6 +142,7 @@ export class CajaService {
     dto: {
       tipo: 'INGRESO' | 'EGRESO';
       estudiante_id?: string;
+      empleado_id?: string;
       estudiante_nombre?: string;
       factura_id?: string;
       conceptos?: Array<{
