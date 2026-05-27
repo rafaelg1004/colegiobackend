@@ -16,10 +16,9 @@ async function run() {
   try {
     await client.connect();
     const res = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND (table_name LIKE '%conta%' OR table_name LIKE '%movimiento%');
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'movimiento_contable';
     `);
     console.log(res.rows);
   } catch(e) {

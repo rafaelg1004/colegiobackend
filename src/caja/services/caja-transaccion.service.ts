@@ -252,7 +252,7 @@ export class CajaTransaccionService {
     // --- INTEGRACIÓN CONTABLE (PARTIDA DOBLE) ---
     const movimientosContables: any[] = [];
     const fechaActual = dto.fecha || new Date().toISOString().split('T')[0];
-    const descripcionGeneral = `${dto.tipo}: ${dto.conceptos?.map(c => c.descripcion).join(', ') || 'Transacción de Caja'} - ${dto.estudiante_nombre || 'General'}`;
+    const descripcionGeneral = `${dto.tipo}: ${dto.conceptos?.map(c => c.descripcion).join(', ') || 'Transacción de Caja'} - ${dto.estudiante_nombre || 'General'} (Ref: ${numeroComprobante})`;
 
     try {
       // Intentar obtener las cuentas de los conceptos o usar por defecto
