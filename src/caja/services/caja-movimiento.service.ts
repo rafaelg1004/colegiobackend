@@ -96,11 +96,12 @@ export class CajaMovimientoService {
         fecha,
         observacion,
         estudiante_id,
+        empleado_id,
         estudiante_nombre,
         numero_comprobante,
         registrado_por,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING *
     `;
 
@@ -111,6 +112,7 @@ export class CajaMovimientoService {
       movimiento.fecha,
       movimiento.observacion || null,
       movimiento.estudiante_id || null,
+      movimiento.empleado_id || null,
       movimiento.estudiante_nombre || null,
       numeroComprobante,
       usuarioId || null,
