@@ -118,4 +118,70 @@ export class CajaInventarioService {
       console.log(`✅ Movimiento de inventario registrado para "${nombreArticulo}" (El stock se actualiza via Trigger)`);
     }
   }
+
+  async aumentarInventario(
+    conceptoId: string,
+    articulosCompra: ArticuloVenta[],
+    movimientoCajaId: string,
+    usuarioId?: string,
+  ) {
+    const query = this.supabase.admin.query;
+
+    let responsableId: string | null = null;
+    if (usuarioId) {
+      try {
+        const { data: perfil } = await this.supabase.admin
+          .from('perfil_usuario')
+          .select('empleado_id')
+          .eq('id', usuarioId)
+          .single();
+        responsableId = perfil?.empleado_id || null;
+      } catch (e) {
+        console.log('No se pudo obtener perfil para responsable_id');
+      }
+    }
+
+    console.log(`📦 Iniciando aumento de inventario para ${articulosCompra.length} artículos`);
+
+    for (const articulo of articulosCompra) {
+      console.log(`🔍 Procesando artículo ID: ${articulo.articulo_inventario_id}, Cantidad: ${articulo.cantidad}`);
+      
+      const { data: stockData } = await query(
+        'SELECT nombre, es_servicio FROM articulo_inventario WHERE id = $1',
+        [articulo.articulo_inventario_id],
+      );
+
+      const nombreArticulo = stockData?.[0]?.nombre || 'Artículo';
+      const esServicio = stockData?.[0]?.es_servicio || false;
+
+      if (esServicio) {
+        console.log(`ℹ️ "${nombreArticulo}" es un servicio. Saltando aumento de inventario.`);
+        continue;
+      }
+
+      const insertData: any = {
+        articulo_id: articulo.articulo_inventario_id,
+        tipo: 'Entrada',
+        cantidad: articulo.cantidad,
+        motivo: `Compra - Movimiento Caja #${movimientoCajaId}`,
+        fecha: new Date().toISOString(),
+      };
+
+      if (responsableId) {
+        insertData.responsable_id = responsableId;
+      }
+
+      const { error: movError } = await this.supabase.admin
+        .from('movimiento_inventario')
+        .insert(insertData);
+
+      if (movError) {
+        console.error('❌ Error al insertar movimiento_inventario (Entrada):', movError);
+        throw new BadRequestException(
+          `Error al registrar entrada de inventario: ${movError.message}`,
+        );
+      }
+      console.log(`✅ Entrada de inventario registrada para "${nombreArticulo}"`);
+    }
+  }
 }

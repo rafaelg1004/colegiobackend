@@ -15,15 +15,12 @@ async function run() {
 
   try {
     await client.connect();
-    console.log('Connected to DB');
-    
-    // Add empleado_id column
-    const query = `
-      ALTER TABLE movimiento_caja 
-      ADD COLUMN IF NOT EXISTS empleado_id UUID REFERENCES empleado(id);
-    `;
-    await client.query(query);
-    console.log('Added empleado_id column to movimiento_caja');
+    const res = await client.query(`
+      SELECT pg_get_functiondef(oid) 
+      FROM pg_proc 
+      WHERE proname = 'fn_actualizar_stock';
+    `);
+    console.log(res.rows[0].pg_get_functiondef);
   } catch(e) {
     console.error(e);
   } finally {

@@ -208,24 +208,33 @@ export class CajaTransaccionService {
       throw new BadRequestException(errorMovimiento.message);
     }
 
-    if (dto.tipo === 'INGRESO' && dto.conceptos) {
-      const articulosVenta = dto.conceptos
+    if (dto.conceptos) {
+      const articulosTransaccion = dto.conceptos
         .filter((c) => c.articulo_inventario_id)
         .map((c) => ({
           articulo_inventario_id: c.articulo_inventario_id!,
           cantidad: c.cantidad,
         }));
 
-      if (articulosVenta.length > 0) {
+      if (articulosTransaccion.length > 0) {
         try {
-          await this.cajaInventario.descontarInventario(
-            'Venta - ' + ((factura as any)?.numero_factura || 'SIN-FACTURA'),
-            articulosVenta,
-            (movimiento as any[])?.[0]?.id,
-            usuarioId,
-          );
+          if (dto.tipo === 'INGRESO') {
+            await this.cajaInventario.descontarInventario(
+              'Venta - ' + ((factura as any)?.numero_factura || 'SIN-FACTURA'),
+              articulosTransaccion,
+              (movimiento as any[])?.[0]?.id,
+              usuarioId,
+            );
+          } else if (dto.tipo === 'EGRESO') {
+            await this.cajaInventario.aumentarInventario(
+              'Compra - ' + (dto.conceptos?.[0]?.descripcion || 'Varios'),
+              articulosTransaccion,
+              (movimiento as any[])?.[0]?.id,
+              usuarioId,
+            );
+          }
         } catch (error) {
-          console.error('Error al descontar inventario:', error);
+          console.error('Error al actualizar inventario:', error);
         }
       }
     }

@@ -135,14 +135,23 @@ export class CajaMovimientoService {
       movimientoId
     ) {
       try {
-        await this.cajaInventario.descontarInventario(
-          movimiento.concepto,
-          movimiento.articulos,
-          movimientoId,
-          usuarioId,
-        );
+        if (movimiento.tipo === 'INGRESO') {
+          await this.cajaInventario.descontarInventario(
+            movimiento.concepto,
+            movimiento.articulos,
+            movimientoId,
+            usuarioId,
+          );
+        } else if (movimiento.tipo === 'EGRESO') {
+          await this.cajaInventario.aumentarInventario(
+            movimiento.concepto,
+            movimiento.articulos,
+            movimientoId,
+            usuarioId,
+          );
+        }
       } catch (error) {
-        console.error('Error al descontar inventario:', error);
+        console.error('Error al actualizar inventario:', error);
       }
     }
 
