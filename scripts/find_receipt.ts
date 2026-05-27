@@ -16,11 +16,12 @@ async function run() {
   try {
     await client.connect();
     const res = await client.query(`
-      SELECT pg_get_functiondef(oid) 
-      FROM pg_proc 
-      WHERE proname = 'fn_actualizar_stock';
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND (table_name LIKE '%conta%' OR table_name LIKE '%movimiento%');
     `);
-    console.log(res.rows[0].pg_get_functiondef);
+    console.log(res.rows);
   } catch(e) {
     console.error(e);
   } finally {
