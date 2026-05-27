@@ -324,6 +324,7 @@ export class CajaTransaccionService {
           haber: 0,
           cuenta_contable_id: cuentaDebitoId,
           factura_id: facturaId || null,
+          movimiento_caja_id: (movimiento as any[])?.[0]?.id || null,
         });
 
         // Asiento HABER
@@ -334,6 +335,7 @@ export class CajaTransaccionService {
           haber: total,
           cuenta_contable_id: cuentaCreditoId,
           factura_id: facturaId || null,
+          movimiento_caja_id: (movimiento as any[])?.[0]?.id || null,
         });
 
         // Insertar en la BD

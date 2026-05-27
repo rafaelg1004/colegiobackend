@@ -132,7 +132,8 @@ export class ContabilidadService {
         cuenta:cuenta_contable_id(codigo, nombre, tipo, naturaleza),
         factura:factura_id(numero_factura),
         pago:pago_id(id),
-        nomina:nomina_id(id, periodo_mes, periodo_anio)
+        nomina:nomina_id(id, periodo_mes, periodo_anio),
+        caja:movimiento_caja_id(numero_comprobante)
       `)
       .order('fecha', { ascending: false })
       .limit(100);
@@ -154,6 +155,7 @@ export class ContabilidadService {
       factura: Array.isArray(mov.factura) ? mov.factura[0] : mov.factura,
       pago: Array.isArray(mov.pago) ? mov.pago[0] : mov.pago,
       nomina: Array.isArray(mov.nomina) ? mov.nomina[0] : mov.nomina,
+      caja: Array.isArray(mov.caja) ? mov.caja[0] : mov.caja,
     }));
 
     return dataUnwrapped;
