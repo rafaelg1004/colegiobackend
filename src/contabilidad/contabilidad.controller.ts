@@ -65,8 +65,13 @@ export class ContabilidadController {
   }
 
   // ======================
-  // REPORTES
+  // REPORTES Y MÉTRICAS
   // ======================
+
+  @Get('metricas')
+  getMetricasFinancieras() {
+    return this.contabilidadService.getMetricasFinancieras();
+  }
 
   @Get('balance-comprobacion')
   getBalanceComprobacion(

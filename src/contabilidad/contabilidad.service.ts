@@ -244,4 +244,133 @@ export class ContabilidadService {
       totales: { debe: totalDebe, haber: totalHaber },
     };
   }
+
+  // ======================
+  // MÉTRICAS FINANCIERAS
+  // ======================
+
+  async getMetricasFinancieras() {
+    // 1. Cuentas y Movimientos del año actual
+    const yearStart = new Date().getFullYear() + '-01-01';
+    const { data: cuentasData } = await this.supabase.admin.from('cuenta_contable').select('*');
+    const cuentas = cuentasData || [];
+    
+    const { data: movimientosData } = await this.supabase.admin
+      .from('movimiento_contable')
+      .select('*')
+      .gte('fecha', yearStart);
+    const movimientos = movimientosData || [];
+
+    // Mapear cuentas por ID
+    const cuentasMap: Record<string, any> = {};
+    cuentas.forEach((c: any) => cuentasMap[c.id] = c);
+
+    // Inicializar agrupadores
+    const ingresosPorMes: Record<string, number> = {};
+    const gastosPorMes: Record<string, number> = {};
+    const distribucionGastosObj: Record<string, number> = {};
+    let flujoEfectivo = 0;
+
+    // Constantes meses
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    // 2. Facturas para Cartera y Proyección
+    const { data: facturasData } = await this.supabase.admin.from('factura').select('*').gte('created_at', yearStart);
+    const facturas = facturasData || [];
+    
+    let carteraPendiente = 0;
+    let proyeccionTotal = 0;
+    let proyeccionRecaudado = 0;
+
+    // Procesar Facturas
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth(); // 0-11
+    
+    facturas.forEach((factura: any) => {
+      const total = Number(factura.total || 0);
+      const pagado = Number(factura.monto_pagado || 0);
+      
+      // Cartera (estado Pendiente o Parcial)
+      if (factura.estado === 'Pendiente' || factura.estado === 'Parcial') {
+        carteraPendiente += (total - pagado);
+      }
+
+      // Proyección (solo facturas emitidas este mes)
+      const fDate = new Date(factura.created_at || factura.fecha_emision);
+      if (fDate.getMonth() === currentMonth) {
+        proyeccionTotal += total;
+        proyeccionRecaudado += pagado;
+      }
+    });
+
+    // Procesar Movimientos
+    movimientos.forEach((mov: any) => {
+      const cuenta = cuentasMap[mov.cuenta_contable_id];
+      if (!cuenta) return;
+      
+      const mDate = new Date(mov.fecha);
+      const mesKey = meses[mDate.getMonth()];
+      
+      const debe = Number(mov.debe || 0);
+      const haber = Number(mov.haber || 0);
+
+      // Ingresos (clase 4)
+      if (cuenta.codigo.startsWith('4')) {
+        ingresosPorMes[mesKey] = (ingresosPorMes[mesKey] || 0) + (haber - debe); // Naturaleza Crédito
+      }
+      
+      // Gastos (clase 5)
+      if (cuenta.codigo.startsWith('5')) {
+        const saldoGasto = debe - haber; // Naturaleza Débito
+        gastosPorMes[mesKey] = (gastosPorMes[mesKey] || 0) + saldoGasto;
+        
+        // Distribución: Agrupar por cuenta principal (4 dígitos)
+        const principalCode = cuenta.codigo.substring(0, 4);
+        const parentCuenta = cuentas.find((c: any) => c.codigo === principalCode);
+        const label = parentCuenta ? parentCuenta.nombre : cuenta.nombre;
+        distribucionGastosObj[label] = (distribucionGastosObj[label] || 0) + saldoGasto;
+      }
+    });
+
+    // Calcular Flujo de Efectivo en cuentas de clase 11 (Caja y Bancos) - histórico total
+    const { data: todosMovimientosData } = await this.supabase.admin.from('movimiento_contable').select('cuenta_contable_id, debe, haber');
+    const todosMovimientos = todosMovimientosData || [];
+    
+    todosMovimientos.forEach((mov: any) => {
+      const cuenta = cuentasMap[mov.cuenta_contable_id];
+      if (!cuenta) return;
+      if (cuenta.codigo.startsWith('11')) {
+         flujoEfectivo += (Number(mov.debe || 0) - Number(mov.haber || 0));
+      }
+    });
+
+    // Formatear arreglos para Chart.js
+    const ingresosVsGastos = meses.map(mes => ({
+      mes,
+      ingresos: ingresosPorMes[mes] || 0,
+      gastos: gastosPorMes[mes] || 0
+    }));
+
+    // Top 5 gastos para la dona (y agrupar resto en "Otros")
+    const gastosSorted = Object.entries(distribucionGastosObj)
+      .sort((a, b) => b[1] - a[1]);
+      
+    let distribucionGastos = gastosSorted.slice(0, 5).map(([name, value]) => ({ name, value }));
+    const otrosGastos = gastosSorted.slice(5).reduce((sum, [, val]) => sum + val, 0);
+    if (otrosGastos > 0) {
+       distribucionGastos.push({ name: 'Otros', value: otrosGastos });
+    }
+
+    return {
+      ingresosVsGastos,
+      distribucionGastos,
+      flujoEfectivo,
+      carteraPendiente,
+      proyeccion: {
+        total: proyeccionTotal,
+        recaudado: proyeccionRecaudado,
+        porcentaje: proyeccionTotal > 0 ? (proyeccionRecaudado / proyeccionTotal) * 100 : 0
+      }
+    };
+  }
 }
