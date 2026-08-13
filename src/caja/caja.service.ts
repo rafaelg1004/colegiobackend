@@ -92,6 +92,10 @@ export class CajaService {
     return this.cajaMovimiento.eliminarMovimiento(id);
   }
 
+  async anularMovimiento(id: string, usuarioId?: string) {
+    return this.cajaMovimiento.anularMovimiento(id, usuarioId);
+  }
+
   async actualizarMovimiento(id: string, dto: { observacion?: string; fecha?: string }) {
     return this.cajaMovimiento.actualizarMovimiento(id, dto);
   }

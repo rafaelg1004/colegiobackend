@@ -6,7 +6,10 @@ export class CajaReporteService {
   constructor(private cajaMovimiento: CajaMovimientoService) {}
 
   async getResumen(fecha_desde?: string, fecha_hasta?: string) {
-    const movimientos = await this.cajaMovimiento.getMovimientos({ fecha_desde, fecha_hasta });
+    const movimientosRaw = await this.cajaMovimiento.getMovimientos({ fecha_desde, fecha_hasta });
+    const movimientos = movimientosRaw.filter(
+      (m) => !m.estado || (m.estado !== 'ANULADO' && m.estado !== 'anulado')
+    );
 
     const ingresos = movimientos.filter((m) => m.tipo === 'INGRESO');
     const egresos = movimientos.filter((m) => m.tipo === 'EGRESO');

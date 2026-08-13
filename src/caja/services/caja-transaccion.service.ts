@@ -300,16 +300,20 @@ export class CajaTransaccionService {
         const { data: cuentasDefecto } = await this.supabase.admin
           .from('cuenta_contable')
           .select('id, codigo')
-          .in('codigo', codigosBuscar);
+          .order('codigo');
 
         if (cuentasDefecto && cuentasDefecto.length > 0) {
           if (!cuentaDebitoId) {
-            const codigoBuscado = dto.tipo === 'INGRESO' ? '1105' : '5105';
-            cuentaDebitoId = cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id;
+            const codigoBuscado = dto.tipo === 'INGRESO' ? '1105' : cuentaEgresoPorDefecto;
+            cuentaDebitoId = cuentasDefecto.find(c => c.codigo === codigoBuscado)?.id
+              || cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id
+              || cuentasDefecto.find(c => c.codigo.startsWith(dto.tipo === 'INGRESO' ? '11' : '5'))?.id;
           }
           if (!cuentaCreditoId) {
             const codigoBuscado = dto.tipo === 'INGRESO' ? cuentaIngresoPorDefecto : '1105';
-            cuentaCreditoId = cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id;
+            cuentaCreditoId = cuentasDefecto.find(c => c.codigo === codigoBuscado)?.id
+              || cuentasDefecto.find(c => c.codigo.startsWith(codigoBuscado))?.id
+              || cuentasDefecto.find(c => c.codigo.startsWith(dto.tipo === 'INGRESO' ? '4' : '11'))?.id;
           }
         }
       }

@@ -37,6 +37,7 @@ export class CajaMovimientoService {
     fecha_hasta?: string;
     tipo?: 'INGRESO' | 'EGRESO';
     concepto?: string;
+    incluir_anulados?: boolean;
   }) {
     const query = this.supabase.admin.query;
 
@@ -51,6 +52,10 @@ export class CajaMovimientoService {
     `;
 
     const params: any[] = [];
+
+    if (!filtros.incluir_anulados) {
+      sql += ` AND (mc.estado IS NULL OR (mc.estado != 'ANULADO' AND mc.estado != 'anulado'))`;
+    }
 
     if (filtros.fecha_desde) {
       sql += ` AND mc.fecha >= $${params.length + 1}`;
@@ -182,6 +187,96 @@ export class CajaMovimientoService {
 
     if (error) throw new BadRequestException(error.message);
     return { message: 'Movimiento eliminado' };
+  }
+
+  async anularMovimiento(id: string, usuarioId?: string) {
+    const query = this.supabase.admin.query;
+
+    // 1. Obtener el movimiento original
+    const { data: existente, error: errExistente } = await this.supabase.admin
+      .from('movimiento_caja')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (errExistente || !existente) {
+      throw new NotFoundException('Movimiento no encontrado');
+    }
+
+    if (existente.estado === 'ANULADO') {
+      throw new BadRequestException('El movimiento ya se encuentra anulado');
+    }
+
+    // 2. Marcar el estado como ANULADO
+    const { error: errUpdate } = await this.supabase.admin
+      .from('movimiento_caja')
+      .update({ estado: 'ANULADO' })
+      .eq('id', id);
+
+    if (errUpdate) throw new BadRequestException('Error al anular en caja: ' + errUpdate.message);
+
+    // 3. Revertir inventario si aplica
+    if (existente.detalles_json && existente.detalles_json.length > 0) {
+      const articulosTransaccion = existente.detalles_json
+        .filter((c: any) => c.articulo_inventario_id)
+        .map((c: any) => ({
+          articulo_inventario_id: c.articulo_inventario_id,
+          cantidad: c.cantidad,
+        }));
+
+      if (articulosTransaccion.length > 0) {
+        try {
+          if (existente.tipo === 'INGRESO') {
+            await this.cajaInventario.aumentarInventario(
+              'Anulación de Venta - ' + (existente.numero_comprobante),
+              articulosTransaccion,
+              id,
+              usuarioId,
+            );
+          } else if (existente.tipo === 'EGRESO') {
+            await this.cajaInventario.descontarInventario(
+              'Anulación de Compra - ' + (existente.numero_comprobante),
+              articulosTransaccion,
+              id,
+              usuarioId,
+            );
+          }
+        } catch (error) {
+          console.error('Error al revertir inventario en anulación:', error);
+        }
+      }
+    }
+
+    // 4. Generar nota contable (reversión de partida doble)
+    try {
+      const { data: contables } = await this.supabase.admin
+        .from('movimiento_contable')
+        .select('*')
+        .eq('movimiento_caja_id', id);
+
+      if (contables && contables.length > 0) {
+        const reversiones = contables.map(mc => ({
+          descripcion: 'ANULACIÓN: ' + mc.descripcion,
+          fecha: new Date().toISOString().split('T')[0],
+          debe: mc.haber,
+          haber: mc.debe,
+          cuenta_contable_id: mc.cuenta_contable_id,
+          factura_id: mc.factura_id,
+          movimiento_caja_id: id,
+        }));
+
+        await this.supabase.admin.from('movimiento_contable').insert(reversiones);
+      }
+    } catch (err) {
+      console.error('Error al generar nota contable de anulación:', err);
+    }
+
+    // 5. Si existe factura, podríamos anularla también o al menos cambiar su estado
+    if (existente.factura_id) {
+       await this.supabase.admin.from('factura').update({ observaciones: 'ANULADA' }).eq('id', existente.factura_id);
+    }
+
+    return { message: 'Transacción anulada correctamente y nota contable generada' };
   }
 
   async actualizarMovimiento(id: string, dto: { observacion?: string; fecha?: string }) {

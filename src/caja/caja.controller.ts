@@ -90,6 +90,12 @@ export class CajaController {
     return this.cajaService.eliminarMovimiento(id);
   }
 
+  @Patch('movimientos/:id/anular')
+  anularMovimiento(@Param('id') id: string, @Request() req: any) {
+    const usuarioId = req.user?.sub || req.user?.id || null;
+    return this.cajaService.anularMovimiento(id, usuarioId);
+  }
+
   @Patch('movimientos/:id/observacion')
   actualizarObservacionMovimiento(
     @Param('id') id: string,
