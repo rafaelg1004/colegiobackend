@@ -607,7 +607,7 @@ export class FinancieroService {
         g.id AS grupo_id,
         COALESCE(g.nombre, 'Sin Grupo') AS grado,
         ac.id AS acudiente_id,
-        TRIM(CONCAT(ac.primer_nombre, ' ', COALESCE(ac.segundo_nombre, ''), ' ', ac.primer_apellido, ' ', COALESCE(ac.segundo_apellido, ''))) AS acudiente_nombre,
+        TRIM(CONCAT(COALESCE(ac.primer_nombre, ''), ' ', COALESCE(ac.primer_apellido, ''))) AS acudiente_nombre,
         COALESCE(ac.numero_documento, '') AS acudiente_documento,
         COALESCE(ac.celular, '') AS acudiente_celular,
         COALESCE(ac.correo_electronico, '') AS acudiente_correo,
