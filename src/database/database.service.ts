@@ -38,15 +38,17 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       database,
       user,
       password,
-      max: 50,
-      min: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: 25,
+      min: 0,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 15000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
       ssl: this.config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
     });
 
     this.pool.on('error', (err) => {
-      console.error('Error inesperado en el pool de PostgreSQL:', err);
+      console.error('Error en pool de PostgreSQL (auto-recuperable):', err.message);
     });
 
     console.log('✅ Pool de PostgreSQL inicializado');
@@ -70,12 +72,21 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Query raw SQL
+  // Query raw SQL con reintento automático por timeout
   async query<T = any>(sql: string, params?: any[]): Promise<{ data: T[] | null; error: Error | null }> {
     try {
       const result = await this.pool.query(sql, params);
       return { data: result.rows, error: null };
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('timeout') || error?.message?.includes('terminated')) {
+        console.warn('⚠️ Re-intentando consulta PostgreSQL por timeout de conexión...');
+        try {
+          const retryResult = await this.pool.query(sql, params);
+          return { data: retryResult.rows, error: null };
+        } catch (retryErr: any) {
+          return { data: null, error: retryErr as Error };
+        }
+      }
       return { data: null, error: error as Error };
     }
   }
