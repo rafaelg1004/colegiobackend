@@ -595,60 +595,120 @@ export class FinancieroService {
     return { message: 'Proceso completado', generadas: facturasGeneradas };
   }
 
-  async getDeudores(mes?: number, anio?: number) {
+  async getDeudores(mes?: number, anio?: number, estadoFiltro?: string, grupoId?: string) {
     const m = mes || new Date().getMonth() + 1;
     const a = anio || new Date().getFullYear();
 
-    // 1. Obtener facturas pendientes del mes
-    const { data: facturas, error: errorFac } = await this.supabase.admin
-      .from('factura')
-      .select('*')
-      .eq('estado', 'Emitida')
-      .gte('fecha_emision', `${a}-${m.toString().padStart(2, '0')}-01`)
-      .lt('fecha_emision', m === 12 ? `${a + 1}-01-01` : `${a}-${(m + 1).toString().padStart(2, '0')}-01`);
+    let sql = `
+      SELECT 
+        e.id AS estudiante_id,
+        TRIM(CONCAT(e.primer_nombre, ' ', COALESCE(e.segundo_nombre, ''), ' ', e.primer_apellido, ' ', COALESCE(e.segundo_apellido, ''))) AS estudiante_nombre,
+        COALESCE(e.numero_documento, '') AS estudiante_documento,
+        g.id AS grupo_id,
+        COALESCE(g.nombre, 'Sin Grupo') AS grado,
+        ac.id AS acudiente_id,
+        TRIM(CONCAT(ac.primer_nombre, ' ', COALESCE(ac.segundo_nombre, ''), ' ', ac.primer_apellido, ' ', COALESCE(ac.segundo_apellido, ''))) AS acudiente_nombre,
+        COALESCE(ac.numero_documento, '') AS acudiente_documento,
+        COALESCE(ac.celular, '') AS acudiente_celular,
+        COALESCE(ac.correo_electronico, '') AS acudiente_correo,
+        f.id AS factura_id,
+        f.numero_factura,
+        COALESCE(f.total, 0)::numeric AS monto_total,
+        COALESCE(p_sum.total_pagado, 0)::numeric AS monto_pagado,
+        CASE 
+          WHEN f.id IS NULL THEN 0
+          WHEN f.estado = 'Pagada' THEN 0
+          ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p_sum.total_pagado, 0))
+        END::numeric AS deuda,
+        CASE 
+          WHEN f.id IS NULL THEN 'Sin Factura'
+          WHEN f.estado = 'Pagada' OR (f.total > 0 AND COALESCE(p_sum.total_pagado, 0) >= f.total) THEN 'Al día'
+          WHEN f.estado = 'Vencida' THEN 'En mora'
+          ELSE 'Debe'
+        END AS estado_pago,
+        f.estado AS estado_factura,
+        f.fecha_emision,
+        p_sum.ultima_fecha_pago,
+        COALESCE(f.observaciones, 'Pensión') AS concepto
+      FROM matricula m
+      JOIN estudiante e ON m.estudiante_id = e.id
+      LEFT JOIN grupo g ON m.grupo_id = g.id
+      LEFT JOIN LATERAL (
+        SELECT ea_in.acudiente_id
+        FROM estudiante_acudiente ea_in
+        WHERE ea_in.estudiante_id = e.id
+        ORDER BY ea_in.es_principal DESC NULLS LAST
+        LIMIT 1
+      ) ea ON true
+      LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
+      LEFT JOIN LATERAL (
+        SELECT f_in.*
+        FROM factura f_in
+        WHERE f_in.estudiante_id = e.id
+          AND f_in.estado != 'Anulada'
+          AND EXTRACT(MONTH FROM f_in.fecha_emision) = $1
+          AND EXTRACT(YEAR FROM f_in.fecha_emision) = $2
+        ORDER BY f_in.created_at DESC
+        LIMIT 1
+      ) f ON true
+      LEFT JOIN LATERAL (
+        SELECT 
+          SUM(p.monto) AS total_pagado,
+          MAX(p.fecha_pago) AS ultima_fecha_pago
+        FROM pago p
+        WHERE p.factura_id = f.id
+      ) p_sum ON f.id IS NOT NULL
+      WHERE (m.estado IS NULL OR m.estado = 'Activa')
+    `;
 
-    console.log(`🔍 getDeudores: Encontradas ${facturas?.length || 0} facturas para ${m}/${a}`);
+    const params: any[] = [m, a];
 
-    if (errorFac) throw new BadRequestException(errorFac.message);
-    // 2. Obtener datos de estudiantes y matrículas en bloque
-    const estudianteIds = [...new Set(facturas.map(f => f.estudiante_id))];
-    if (estudianteIds.length === 0) return { deudores: [] };
-    
-    const [resEst, resMat] = await Promise.all([
-      this.supabase.admin.from('estudiante').select('id, primer_nombre, primer_apellido').in('id', estudianteIds),
-      this.supabase.admin.from('matricula').select('estudiante_id, estado, grupo:grupo_id(nombre)').in('estudiante_id', estudianteIds)
-    ]);
+    if (grupoId) {
+      params.push(grupoId);
+      sql += ` AND m.grupo_id = $${params.length}`;
+    }
 
-    const estudiantesMap = new Map((resEst.data || []).map(e => [e.id, e]));
-    const matriculasMap = new Map((resMat.data || []).map(m => [m.estudiante_id, m]));
+    if (estadoFiltro && estadoFiltro !== 'Todos') {
+      if (estadoFiltro === 'Debe') {
+        sql += ` AND (f.id IS NOT NULL AND f.estado != 'Pagada' AND (f.total - COALESCE(p_sum.total_pagado, 0)) > 0)`;
+      } else if (estadoFiltro === 'Al dia' || estadoFiltro === 'Al día') {
+        sql += ` AND (f.estado = 'Pagada' OR (f.total > 0 AND COALESCE(p_sum.total_pagado, 0) >= f.total))`;
+      } else if (estadoFiltro === 'Sin Factura') {
+        sql += ` AND (f.id IS NULL)`;
+      }
+    }
 
-    // 3. Juntar todo
-    const deudores = facturas.map(fac => {
-      const est = estudiantesMap.get(fac.estudiante_id) as any;
-      const mat = matriculasMap.get(fac.estudiante_id) as any;
+    sql += ` ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC`;
 
-      const nombreCompleto = est
-        ? `${est.primer_nombre} ${est.primer_apellido}`.trim()
-        : 'Estudiante no encontrado';
+    const { data, error } = await this.supabase.admin.query(sql, params);
+    if (error) {
+      console.error('❌ Error ejecutando getDeudores SQL:', error);
+      throw new BadRequestException(error.message);
+    }
 
-      const grupoNombre = (mat as any)?.grupo && Array.isArray((mat as any).grupo) && (mat as any).grupo.length > 0
-        ? (mat as any).grupo[0].nombre
-        : 'N/A';
-
-      return {
-        factura_id: fac.id,
-        numero_factura: fac.numero_factura,
-        estudiante_id: fac.estudiante_id,
-        estudiante_nombre: nombreCompleto,
-        grado: grupoNombre,
-        mes: m,
-        anio: a,
-        deuda: Number(fac.total || 0),
-        estado: fac.estado,
-        fecha_emision: fac.fecha_emision,
-        concepto: fac.observaciones || 'Factura de Venta'
-      };
-    });
+    const deudores = (data || []).map(row => ({
+      factura_id: row.factura_id,
+      numero_factura: row.numero_factura || 'N/A',
+      estudiante_id: row.estudiante_id,
+      estudiante_nombre: row.estudiante_nombre,
+      estudiante_documento: row.estudiante_documento,
+      grado: row.grado,
+      acudiente_id: row.acudiente_id,
+      acudiente_nombre: row.acudiente_nombre || 'Sin acudiente',
+      acudiente_documento: row.acudiente_documento || 'N/A',
+      acudiente_celular: row.acudiente_celular || 'N/A',
+      acudiente_correo: row.acudiente_correo || 'N/A',
+      mes: m,
+      anio: a,
+      monto_total: Number(row.monto_total || 0),
+      monto_pagado: Number(row.monto_pagado || 0),
+      deuda: Number(row.deuda || 0),
+      estado: row.estado_pago,
+      estado_factura: row.estado_factura,
+      fecha_emision: row.fecha_emision,
+      fecha_pago: row.ultima_fecha_pago,
+      concepto: row.concepto
+    }));
 
     return { deudores };
   }

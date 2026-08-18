@@ -65,41 +65,85 @@ WHERE estado IS NULL OR (estado != 'ANULADO' AND estado != 'anulado')
 GROUP BY fecha
 ORDER BY fecha DESC;
 
--- C) Insertar la contrapartida (Débito en Caja/Banco) para nivelar los $100.000 descuadrados
--- Si existe un movimiento en el Haber de 100.000 sin contrapartida en el Debe, este comando crea la contrapartida:
+-- C) Buscar Egresos de Caja que no se registraron en Contabilidad (causante del descuadre de $100.000)
+SELECT 
+    'Egreso en Caja sin registro en Contabilidad' AS tipo_hallazgo,
+    mc.id,
+    mc.fecha,
+    mc.concepto,
+    mc.monto,
+    mc.numero_comprobante
+FROM movimiento_caja mc
+WHERE mc.tipo = 'EGRESO'
+  AND (mc.estado IS NULL OR (mc.estado != 'ANULADO' AND mc.estado != 'anulado'))
+  AND NOT EXISTS (
+      SELECT 1 FROM movimiento_contable mco
+      WHERE mco.movimiento_caja_id = mc.id
+  );
+
+-- D) Insertar en Contabilidad el Egreso de Caja faltante (Nivelar $100.000 de Gasto)
+-- 1. Asiento DEBE (Gasto)
 INSERT INTO movimiento_contable (
     descripcion,
     debe,
     haber,
     cuenta_contable_id,
     fecha,
-    factura_id,
     movimiento_caja_id,
     created_at
 )
 SELECT 
-    'Ajuste por Nivelación de Partida Doble (Caja/Banco) - ' || mc.descripcion,
-    mc.haber, -- Se asigna como Débito los 100.000
+    'EGRESO CAJA: ' || mc.concepto || ' (Comp: ' || COALESCE(mc.numero_comprobante, '') || ')',
+    mc.monto, -- DEBE (Gasto)
     0,
+    COALESCE(
+        (SELECT id FROM cuenta_contable WHERE codigo = '5105' LIMIT 1),
+        (SELECT id FROM cuenta_contable WHERE codigo LIKE '5%' LIMIT 1)
+    ) AS cuenta_contable_id,
+    mc.fecha,
+    mc.id,
+    NOW()
+FROM movimiento_caja mc
+WHERE mc.tipo = 'EGRESO'
+  AND (mc.estado IS NULL OR (mc.estado != 'ANULADO' AND mc.estado != 'anulado'))
+  AND NOT EXISTS (
+      SELECT 1 FROM movimiento_contable mco
+      WHERE mco.movimiento_caja_id = mc.id AND mco.debe > 0
+  );
+
+-- 2. Asiento HABER (Caja/Banco)
+INSERT INTO movimiento_contable (
+    descripcion,
+    debe,
+    haber,
+    cuenta_contable_id,
+    fecha,
+    movimiento_caja_id,
+    created_at
+)
+SELECT 
+    'EGRESO CAJA: ' || mc.concepto || ' (Comp: ' || COALESCE(mc.numero_comprobante, '') || ')',
+    0,
+    mc.monto, -- HABER (Salida de Caja)
     COALESCE(
         (SELECT id FROM cuenta_contable WHERE codigo = '1105' LIMIT 1),
         (SELECT id FROM cuenta_contable WHERE codigo LIKE '11%' LIMIT 1)
     ) AS cuenta_contable_id,
     mc.fecha,
-    mc.factura_id,
-    mc.movimiento_caja_id,
+    mc.id,
     NOW()
-FROM movimiento_contable mc
-WHERE (mc.haber = 100000 AND mc.debe = 0)
+FROM movimiento_caja mc
+WHERE mc.tipo = 'EGRESO'
+  AND (mc.estado IS NULL OR (mc.estado != 'ANULADO' AND mc.estado != 'anulado'))
   AND NOT EXISTS (
-      SELECT 1 FROM movimiento_contable mc2 
-      WHERE mc2.debe = 100000 
-        AND (mc2.factura_id = mc.factura_id OR mc2.movimiento_caja_id = mc.movimiento_caja_id OR mc2.fecha = mc.fecha)
+      SELECT 1 FROM movimiento_contable mco
+      WHERE mco.movimiento_caja_id = mc.id AND mco.haber > 0
   );
 
--- D) Verificación Final de Cuadre
+-- E) Verificación Final de Totales
 SELECT 
-    SUM(debe) AS total_debe_final,
-    SUM(haber) AS total_haber_final,
-    (SUM(debe) - SUM(haber)) AS diferencia_final_debe_menos_haber
-FROM movimiento_contable;
+    (SELECT SUM(monto) FROM movimiento_caja WHERE tipo = 'INGRESO' AND (estado IS NULL OR estado NOT IN ('ANULADO','anulado'))) AS total_ingresos_caja,
+    (SELECT SUM(monto) FROM movimiento_caja WHERE tipo = 'EGRESO' AND (estado IS NULL OR estado NOT IN ('ANULADO','anulado'))) AS total_egresos_caja,
+    (SELECT SUM(haber) FROM movimiento_contable mc JOIN cuenta_contable cc ON mc.cuenta_contable_id = cc.id WHERE cc.codigo LIKE '4%') AS total_ingresos_contabilidad,
+    (SELECT SUM(debe) FROM movimiento_contable mc JOIN cuenta_contable cc ON mc.cuenta_contable_id = cc.id WHERE cc.codigo LIKE '5%') AS total_gastos_contabilidad;
+

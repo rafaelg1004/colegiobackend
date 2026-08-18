@@ -154,10 +154,14 @@ export class FinancieroController {
   getDeudores(
     @Query('mes') mes?: string,
     @Query('anio') anio?: string,
+    @Query('estado') estado?: string,
+    @Query('grupo_id') grupo_id?: string,
   ) {
     return this.finService.getDeudores(
       mes ? parseInt(mes) : undefined,
       anio ? parseInt(anio) : undefined,
+      estado,
+      grupo_id,
     );
   }
 }
