@@ -653,17 +653,11 @@ export class FinancieroService {
           EXTRACT(YEAR FROM f.fecha_emision) = $2 OR EXTRACT(YEAR FROM f.fecha_pago) = $2
         )
         AND (
-          f.observaciones ILIKE '%pensi%'
-          OR EXISTS (
+          (f.observaciones IS NULL OR (f.observaciones NOT ILIKE '%formulario%' AND f.observaciones NOT ILIKE '%uniforme%'))
+          AND NOT EXISTS (
             SELECT 1 FROM factura_detalle df 
-            LEFT JOIN articulo_inventario ai ON df.articulo_inventario_id = ai.id
-            LEFT JOIN concepto_cobro cc ON df.concepto_cobro_id = cc.id
             WHERE df.factura_id = f.id 
-              AND (
-                df.descripcion ILIKE '%pensi%' 
-                OR ai.nombre ILIKE '%pensi%'
-                OR cc.nombre ILIKE '%pensi%'
-              )
+              AND (df.descripcion ILIKE '%formulario%' OR df.descripcion ILIKE '%uniforme%')
           )
         )
       LEFT JOIN (
