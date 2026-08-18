@@ -47,9 +47,6 @@ export class InventarioService {
 
   // --- Artículos ---
   async crearArticulo(dto: CreateArticuloDto) {
-    if (!dto.categoria_id || dto.categoria_id === '' || dto.categoria_id === 'null') {
-      delete dto.categoria_id;
-    }
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
       .insert(dto)
@@ -70,7 +67,7 @@ export class InventarioService {
     try {
       let qb = this.supabase.admin
         .from('articulo_inventario')
-        .select('*')
+        .select('*, categoria:categoria_id(id, nombre)')
         .order('nombre');
 
       if (filtros.categoria_id)
