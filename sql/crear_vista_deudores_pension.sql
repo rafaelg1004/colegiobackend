@@ -31,7 +31,21 @@ SELECT
   END AS estado_pago,
   f.estado AS estado_factura,
   f.fecha_emision,
-  COALESCE(EXTRACT(MONTH FROM p.ultima_fecha_pago)::int, EXTRACT(MONTH FROM f.fecha_emision)::int) AS mes,
+  CASE 
+    WHEN f.observaciones ILIKE '%enero%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%enero%') THEN 1
+    WHEN f.observaciones ILIKE '%febrero%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%febrero%') THEN 2
+    WHEN f.observaciones ILIKE '%marzo%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%marzo%') THEN 3
+    WHEN f.observaciones ILIKE '%abril%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%abril%') THEN 4
+    WHEN f.observaciones ILIKE '%mayo%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%mayo%') THEN 5
+    WHEN f.observaciones ILIKE '%junio%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%junio%') THEN 6
+    WHEN f.observaciones ILIKE '%julio%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%julio%') THEN 7
+    WHEN f.observaciones ILIKE '%agosto%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%agosto%') THEN 8
+    WHEN f.observaciones ILIKE '%septiembre%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%septiembre%') THEN 9
+    WHEN f.observaciones ILIKE '%octubre%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%octubre%') THEN 10
+    WHEN f.observaciones ILIKE '%noviembre%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%noviembre%') THEN 11
+    WHEN f.observaciones ILIKE '%diciembre%' OR EXISTS (SELECT 1 FROM factura_detalle df WHERE df.factura_id = f.id AND df.descripcion ILIKE '%diciembre%') THEN 12
+    ELSE COALESCE(EXTRACT(MONTH FROM f.fecha_emision)::int, EXTRACT(MONTH FROM p.ultima_fecha_pago)::int)
+  END AS mes,
   COALESCE(EXTRACT(YEAR FROM p.ultima_fecha_pago)::int, EXTRACT(YEAR FROM f.fecha_emision)::int) AS anio,
   p.ultima_fecha_pago,
   COALESCE(f.observaciones, 'Pensión') AS concepto,
@@ -45,17 +59,11 @@ LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
 LEFT JOIN factura f ON e.id = f.estudiante_id 
   AND (f.estado IS NULL OR f.estado != 'Anulada')
   AND (
-    f.observaciones ILIKE '%pensi%'
-    OR EXISTS (
+    (f.observaciones IS NULL OR (f.observaciones NOT ILIKE '%formulario%' AND f.observaciones NOT ILIKE '%uniforme%'))
+    AND NOT EXISTS (
       SELECT 1 FROM factura_detalle df 
-      LEFT JOIN articulo_inventario ai ON df.articulo_inventario_id = ai.id
-      LEFT JOIN concepto_cobro cc ON df.concepto_cobro_id = cc.id
       WHERE df.factura_id = f.id 
-        AND (
-          df.descripcion ILIKE '%pensi%' 
-          OR ai.nombre ILIKE '%pensi%'
-          OR cc.nombre ILIKE '%pensi%'
-        )
+        AND (df.descripcion ILIKE '%formulario%' OR df.descripcion ILIKE '%uniforme%')
     )
   )
 LEFT JOIN (

@@ -596,8 +596,14 @@ export class FinancieroService {
   }
 
   async getDeudores(mes?: number, anio?: number, estadoFiltro?: string, grupoId?: string) {
-    const m = mes || new Date().getMonth() + 1;
-    const a = anio || new Date().getFullYear();
+    const m = Number(mes) || new Date().getMonth() + 1;
+    const a = Number(anio) || new Date().getFullYear();
+
+    const nombreMeses: { [key: number]: string } = {
+      1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio',
+      7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    };
+    const mesNombre = nombreMeses[m] || '';
 
     let sql = `
       SELECT 
@@ -647,18 +653,23 @@ export class FinancieroService {
       LEFT JOIN factura f ON e.id = f.estudiante_id 
         AND (f.estado IS NULL OR f.estado != 'Anulada')
         AND (
-          EXTRACT(MONTH FROM f.fecha_emision) = $1 OR EXTRACT(MONTH FROM f.fecha_pago) = $1
-        )
-        AND (
-          EXTRACT(YEAR FROM f.fecha_emision) = $2 OR EXTRACT(YEAR FROM f.fecha_pago) = $2
-        )
-        AND (
           (f.observaciones IS NULL OR (f.observaciones NOT ILIKE '%formulario%' AND f.observaciones NOT ILIKE '%uniforme%'))
           AND NOT EXISTS (
             SELECT 1 FROM factura_detalle df 
             WHERE df.factura_id = f.id 
               AND (df.descripcion ILIKE '%formulario%' OR df.descripcion ILIKE '%uniforme%')
           )
+        )
+        AND (
+          EXTRACT(MONTH FROM f.fecha_emision) = $1 
+          OR EXTRACT(MONTH FROM f.fecha_pago) = $1
+          OR f.observaciones ILIKE '%' || $3 || '%'
+          OR EXISTS (
+            SELECT 1 FROM factura_detalle df2 WHERE df2.factura_id = f.id AND df2.descripcion ILIKE '%' || $3 || '%'
+          )
+        )
+        AND (
+          EXTRACT(YEAR FROM f.fecha_emision) = $2 OR EXTRACT(YEAR FROM f.fecha_pago) = $2
         )
       LEFT JOIN (
         SELECT 
@@ -671,7 +682,7 @@ export class FinancieroService {
       WHERE (m.estado IS NULL OR m.estado = 'Activa')
     `;
 
-    const params: any[] = [m, a];
+    const params: any[] = [m, a, mesNombre];
 
     if (grupoId) {
       params.push(grupoId);
