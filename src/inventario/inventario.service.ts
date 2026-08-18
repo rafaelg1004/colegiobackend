@@ -50,7 +50,7 @@ export class InventarioService {
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
       .insert(dto)
-      .select(`*, categoria:categoria_id(nombre)`)
+      .select(`*, categoria:categoria_inventario(nombre)`)
       .single();
     if (error) throw new BadRequestException(error.message);
     return { message: 'Artículo creado', data };
@@ -67,7 +67,7 @@ export class InventarioService {
     try {
       let qb = this.supabase.admin
         .from('articulo_inventario')
-        .select('*, categoria:categoria_id(id, nombre)')
+        .select('*, categoria:categoria_inventario(id, nombre)')
         .order('nombre');
 
       if (filtros.categoria_id)
@@ -91,10 +91,10 @@ export class InventarioService {
       // Filtrar por alerta de stock
       if (filtros.alerta === 'bajo') {
         resultado = resultado.filter(
-          (a) => a.cantidad_stock > 0 && a.cantidad_stock <= a.cantidad_minima,
+          (item) => item.cantidad_stock <= item.cantidad_minima,
         );
       } else if (filtros.alerta === 'agotado') {
-        resultado = resultado.filter((a) => a.cantidad_stock <= 0);
+        resultado = resultado.filter((item) => item.cantidad_stock === 0);
       }
 
       return resultado;
@@ -110,7 +110,7 @@ export class InventarioService {
       .select(
         `
         *, 
-        categoria:categoria_id(nombre),
+        categoria:categoria_inventario(nombre),
         movimiento_inventario(tipo, cantidad, motivo, fecha, responsable:responsable_id(primer_nombre, primer_apellido))
       `,
       )
