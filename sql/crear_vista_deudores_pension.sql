@@ -45,11 +45,11 @@ LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
 LEFT JOIN factura f ON e.id = f.estudiante_id 
   AND (f.estado IS NULL OR f.estado != 'Anulada')
   AND (
-    f.observaciones ILIKE '%pens%' 
-    OR EXISTS (
+    (f.observaciones IS NULL OR f.observaciones NOT ILIKE '%formulario%')
+    AND NOT EXISTS (
       SELECT 1 FROM factura_detalle df 
       WHERE df.factura_id = f.id 
-        AND df.descripcion ILIKE '%pens%'
+        AND df.descripcion ILIKE '%formulario%'
     )
   )
 LEFT JOIN (
