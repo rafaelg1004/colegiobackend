@@ -696,12 +696,22 @@ export class FinancieroService {
     let deudores = Array.from(deudoresMap.values());
 
     if (estadoFiltro && estadoFiltro !== 'Todos') {
-      if (estadoFiltro === 'Debe') {
-        deudores = deudores.filter(d => d.estado === 'Debe' || d.estado === 'En mora' || d.deuda > 0);
-      } else if (estadoFiltro === 'Al dia' || estadoFiltro === 'Al día') {
-        deudores = deudores.filter(d => d.estado === 'Al día');
-      } else if (estadoFiltro === 'Sin Factura') {
-        deudores = deudores.filter(d => d.estado === 'Sin Factura');
+      const efNorm = estadoFiltro.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (efNorm === 'debe') {
+        deudores = deudores.filter(d => {
+          const stNorm = (d.estado || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          return stNorm === 'debe' || stNorm === 'en mora' || d.deuda > 0;
+        });
+      } else if (efNorm === 'al dia') {
+        deudores = deudores.filter(d => {
+          const stNorm = (d.estado || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          return stNorm === 'al dia';
+        });
+      } else if (efNorm === 'sin factura') {
+        deudores = deudores.filter(d => {
+          const stNorm = (d.estado || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          return stNorm === 'sin factura';
+        });
       }
     }
 
