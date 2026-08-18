@@ -47,6 +47,9 @@ export class InventarioService {
 
   // --- Artículos ---
   async crearArticulo(dto: CreateArticuloDto) {
+    if (!dto.categoria_id || dto.categoria_id === '' || dto.categoria_id === 'null') {
+      delete dto.categoria_id;
+    }
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
       .insert(dto)

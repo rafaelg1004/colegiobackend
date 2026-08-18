@@ -1,5 +1,5 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsInt, IsIn, Min, IsBoolean,
+  IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsInt, IsIn, Min, IsBoolean, ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -47,7 +47,9 @@ export class CreateArticuloDto {
   @IsOptional() @IsString()
   ubicacion?: string;
 
-  @IsOptional() @IsUUID()
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsUUID()
   categoria_id?: string;
 }
 
@@ -83,7 +85,9 @@ export class UpdateArticuloDto {
   @IsOptional() @IsString()
   ubicacion?: string;
 
-  @IsOptional() @IsUUID()
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsUUID()
   categoria_id?: string;
 
   @IsOptional() @IsIn(['Disponible', 'Agotado', 'Dado de baja'])
