@@ -614,50 +614,36 @@ export class FinancieroService {
         f.id AS factura_id,
         f.numero_factura,
         COALESCE(f.total, 0)::numeric AS monto_total,
-        COALESCE(p_sum.total_pagado, 0)::numeric AS monto_pagado,
+        COALESCE(p.monto_pagado, 0)::numeric AS monto_pagado,
         CASE 
           WHEN f.id IS NULL THEN 0
           WHEN f.estado = 'Pagada' THEN 0
-          ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p_sum.total_pagado, 0))
+          ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, 0))
         END::numeric AS deuda,
         CASE 
           WHEN f.id IS NULL THEN 'Sin Factura'
-          WHEN f.estado = 'Pagada' OR (f.total > 0 AND COALESCE(p_sum.total_pagado, 0) >= f.total) THEN 'Al día'
+          WHEN f.estado = 'Pagada' OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, 0) >= f.total) THEN 'Al día'
           WHEN f.estado = 'Vencida' THEN 'En mora'
           ELSE 'Debe'
         END AS estado_pago,
         f.estado AS estado_factura,
         f.fecha_emision,
-        p_sum.ultima_fecha_pago,
+        p.ultima_fecha_pago,
         COALESCE(f.observaciones, 'Pensión') AS concepto
       FROM matricula m
       JOIN estudiante e ON m.estudiante_id = e.id
       LEFT JOIN grupo g ON m.grupo_id = g.id
-      LEFT JOIN LATERAL (
-        SELECT ea_in.acudiente_id
-        FROM estudiante_acudiente ea_in
-        WHERE ea_in.estudiante_id = e.id
-        ORDER BY ea_in.es_principal DESC NULLS LAST
-        LIMIT 1
-      ) ea ON true
+      LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
       LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
-      LEFT JOIN LATERAL (
-        SELECT f_in.*
-        FROM factura f_in
-        WHERE f_in.estudiante_id = e.id
-          AND f_in.estado != 'Anulada'
-          AND EXTRACT(MONTH FROM f_in.fecha_emision) = $1
-          AND EXTRACT(YEAR FROM f_in.fecha_emision) = $2
-        ORDER BY f_in.created_at DESC
-        LIMIT 1
-      ) f ON true
-      LEFT JOIN LATERAL (
-        SELECT 
-          SUM(p.monto) AS total_pagado,
-          MAX(p.fecha_pago) AS ultima_fecha_pago
-        FROM pago p
-        WHERE p.factura_id = f.id
-      ) p_sum ON f.id IS NOT NULL
+      LEFT JOIN factura f ON e.id = f.estudiante_id 
+        AND (f.estado IS NULL OR f.estado != 'Anulada') 
+        AND EXTRACT(MONTH FROM f.fecha_emision) = $1 
+        AND EXTRACT(YEAR FROM f.fecha_emision) = $2
+      LEFT JOIN (
+        SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
+        FROM pago
+        GROUP BY factura_id
+      ) p ON f.id = p.factura_id
       WHERE (m.estado IS NULL OR m.estado = 'Activa')
     `;
 
@@ -668,16 +654,6 @@ export class FinancieroService {
       sql += ` AND m.grupo_id = $${params.length}`;
     }
 
-    if (estadoFiltro && estadoFiltro !== 'Todos') {
-      if (estadoFiltro === 'Debe') {
-        sql += ` AND (f.id IS NOT NULL AND f.estado != 'Pagada' AND (f.total - COALESCE(p_sum.total_pagado, 0)) > 0)`;
-      } else if (estadoFiltro === 'Al dia' || estadoFiltro === 'Al día') {
-        sql += ` AND (f.estado = 'Pagada' OR (f.total > 0 AND COALESCE(p_sum.total_pagado, 0) >= f.total))`;
-      } else if (estadoFiltro === 'Sin Factura') {
-        sql += ` AND (f.id IS NULL)`;
-      }
-    }
-
     sql += ` ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC`;
 
     const { data, error } = await this.supabase.admin.query(sql, params);
@@ -686,29 +662,48 @@ export class FinancieroService {
       throw new BadRequestException(error.message);
     }
 
-    const deudores = (data || []).map(row => ({
-      factura_id: row.factura_id,
-      numero_factura: row.numero_factura || 'N/A',
-      estudiante_id: row.estudiante_id,
-      estudiante_nombre: row.estudiante_nombre,
-      estudiante_documento: row.estudiante_documento,
-      grado: row.grado,
-      acudiente_id: row.acudiente_id,
-      acudiente_nombre: row.acudiente_nombre || 'Sin acudiente',
-      acudiente_documento: row.acudiente_documento || 'N/A',
-      acudiente_celular: row.acudiente_celular || 'N/A',
-      acudiente_correo: row.acudiente_correo || 'N/A',
-      mes: m,
-      anio: a,
-      monto_total: Number(row.monto_total || 0),
-      monto_pagado: Number(row.monto_pagado || 0),
-      deuda: Number(row.deuda || 0),
-      estado: row.estado_pago,
-      estado_factura: row.estado_factura,
-      fecha_emision: row.fecha_emision,
-      fecha_pago: row.ultima_fecha_pago,
-      concepto: row.concepto
-    }));
+    // Deduplicar si un estudiante tiene múltiples acudientes vinculados
+    const deudoresMap = new Map<string, any>();
+
+    (data || []).forEach(row => {
+      if (!deudoresMap.has(row.estudiante_id)) {
+        deudoresMap.set(row.estudiante_id, {
+          factura_id: row.factura_id,
+          numero_factura: row.numero_factura || 'N/A',
+          estudiante_id: row.estudiante_id,
+          estudiante_nombre: row.estudiante_nombre,
+          estudiante_documento: row.estudiante_documento,
+          grado: row.grado,
+          acudiente_id: row.acudiente_id,
+          acudiente_nombre: row.acudiente_nombre || 'Sin acudiente',
+          acudiente_documento: row.acudiente_documento || 'N/A',
+          acudiente_celular: row.acudiente_celular || 'N/A',
+          acudiente_correo: row.acudiente_correo || 'N/A',
+          mes: m,
+          anio: a,
+          monto_total: Number(row.monto_total || 0),
+          monto_pagado: Number(row.monto_pagado || 0),
+          deuda: Number(row.deuda || 0),
+          estado: row.estado_pago,
+          estado_factura: row.estado_factura,
+          fecha_emision: row.fecha_emision,
+          fecha_pago: row.ultima_fecha_pago,
+          concepto: row.concepto
+        });
+      }
+    });
+
+    let deudores = Array.from(deudoresMap.values());
+
+    if (estadoFiltro && estadoFiltro !== 'Todos') {
+      if (estadoFiltro === 'Debe') {
+        deudores = deudores.filter(d => d.estado === 'Debe' || d.estado === 'En mora' || d.deuda > 0);
+      } else if (estadoFiltro === 'Al dia' || estadoFiltro === 'Al día') {
+        deudores = deudores.filter(d => d.estado === 'Al día');
+      } else if (estadoFiltro === 'Sin Factura') {
+        deudores = deudores.filter(d => d.estado === 'Sin Factura');
+      }
+    }
 
     return { deudores };
   }
