@@ -639,6 +639,14 @@ export class FinancieroService {
         AND (f.estado IS NULL OR f.estado != 'Anulada') 
         AND EXTRACT(MONTH FROM f.fecha_emision) = $1 
         AND EXTRACT(YEAR FROM f.fecha_emision) = $2
+        AND (
+          f.observaciones ILIKE '%pens%' 
+          OR EXISTS (
+            SELECT 1 FROM detalle_factura df 
+            WHERE df.factura_id = f.id 
+              AND df.descripcion ILIKE '%pens%'
+          )
+        )
       LEFT JOIN (
         SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
         FROM pago
@@ -700,7 +708,7 @@ export class FinancieroService {
       if (efNorm === 'debe') {
         deudores = deudores.filter(d => {
           const stNorm = (d.estado || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          return stNorm === 'debe' || stNorm === 'en mora' || d.deuda > 0;
+          return stNorm === 'debe' || stNorm === 'en mora' || stNorm === 'sin factura' || d.deuda > 0;
         });
       } else if (efNorm === 'al dia') {
         deudores = deudores.filter(d => {

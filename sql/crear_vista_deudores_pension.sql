@@ -42,7 +42,16 @@ JOIN estudiante e ON m.estudiante_id = e.id
 LEFT JOIN grupo g ON m.grupo_id = g.id
 LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
 LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
-LEFT JOIN factura f ON e.id = f.estudiante_id AND (f.estado IS NULL OR f.estado != 'Anulada')
+LEFT JOIN factura f ON e.id = f.estudiante_id 
+  AND (f.estado IS NULL OR f.estado != 'Anulada')
+  AND (
+    f.observaciones ILIKE '%pens%' 
+    OR EXISTS (
+      SELECT 1 FROM detalle_factura df 
+      WHERE df.factura_id = f.id 
+        AND df.descripcion ILIKE '%pens%'
+    )
+  )
 LEFT JOIN (
   SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
   FROM pago
