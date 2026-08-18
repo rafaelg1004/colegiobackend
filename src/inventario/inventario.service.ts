@@ -50,7 +50,7 @@ export class InventarioService {
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
       .insert(dto)
-      .select(`*, categoria:categoria_inventario(nombre)`)
+      .select(`*`)
       .single();
     if (error) throw new BadRequestException(error.message);
     return { message: 'Artículo creado', data };
@@ -67,7 +67,7 @@ export class InventarioService {
     try {
       let qb = this.supabase.admin
         .from('articulo_inventario')
-        .select('*, categoria:categoria_inventario(id, nombre)')
+        .select('*')
         .order('nombre');
 
       if (filtros.categoria_id)
@@ -86,7 +86,17 @@ export class InventarioService {
         throw new BadRequestException(error.message);
       }
 
-      let resultado = data || [];
+      // Cargar categorías para poblar el objeto categoria
+      const { data: categorias } = await this.supabase.admin
+        .from('categoria_inventario')
+        .select('id, nombre');
+
+      const catMap = new Map((categorias || []).map(c => [c.id, c]));
+
+      let resultado = (data || []).map(item => ({
+        ...item,
+        categoria: catMap.get(item.categoria_id) || null
+      }));
 
       // Filtrar por alerta de stock
       if (filtros.alerta === 'bajo') {
@@ -107,17 +117,23 @@ export class InventarioService {
   async getArticulo(id: string) {
     const { data, error } = await this.supabase.admin
       .from('articulo_inventario')
-      .select(
-        `
-        *, 
-        categoria:categoria_inventario(nombre),
-        movimiento_inventario(tipo, cantidad, motivo, fecha, responsable:responsable_id(primer_nombre, primer_apellido))
-      `,
-      )
+      .select('*')
       .eq('id', id)
       .single();
 
     if (error || !data) throw new NotFoundException('Artículo no encontrado');
+
+    if (data.categoria_id) {
+      const { data: cat } = await this.supabase.admin
+        .from('categoria_inventario')
+        .select('id, nombre')
+        .eq('id', data.categoria_id)
+        .single();
+      data.categoria = cat || null;
+    }
+
+    return data;
+  }
     return data;
   }
 
