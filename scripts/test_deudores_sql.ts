@@ -60,6 +60,14 @@ async function main() {
         AND (f.estado IS NULL OR f.estado != 'Anulada') 
         AND EXTRACT(MONTH FROM f.fecha_emision) = $1 
         AND EXTRACT(YEAR FROM f.fecha_emision) = $2
+        AND (
+          f.observaciones ILIKE '%pens%' 
+          OR EXISTS (
+            SELECT 1 FROM factura_detalle df 
+            WHERE df.factura_id = f.id 
+              AND df.descripcion ILIKE '%pens%'
+          )
+        )
       LEFT JOIN (
         SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
         FROM pago

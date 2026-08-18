@@ -47,7 +47,7 @@ LEFT JOIN factura f ON e.id = f.estudiante_id
   AND (
     f.observaciones ILIKE '%pens%' 
     OR EXISTS (
-      SELECT 1 FROM detalle_factura df 
+      SELECT 1 FROM factura_detalle df 
       WHERE df.factura_id = f.id 
         AND df.descripcion ILIKE '%pens%'
     )
