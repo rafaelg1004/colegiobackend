@@ -17,23 +17,40 @@ SELECT
   f.id AS factura_id,
   f.numero_factura,
   COALESCE(f.total, 0)::numeric AS monto_total,
-  COALESCE(p.monto_pagado, 0)::numeric AS monto_pagado,
+  COALESCE(
+    p.monto_pagado, 
+    f.monto_pagado, 
+    CASE WHEN f.estado = 'Pagada' THEN f.total ELSE 0 END
+  )::numeric AS monto_pagado,
   CASE 
     WHEN f.id IS NULL THEN 0
     WHEN f.estado = 'Pagada' THEN 0
-    ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, 0))
+    ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, f.monto_pagado, 0))
   END::numeric AS deuda,
   CASE 
     WHEN f.id IS NULL THEN 'Sin Factura'
-    WHEN f.estado = 'Pagada' OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, 0) >= f.total) THEN 'Al día'
+    WHEN f.estado = 'Pagada' 
+         OR COALESCE(p.monto_pagado, f.monto_pagado, 0) >= COALESCE(f.total, 0) 
+         OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, f.monto_pagado, 0) > 0)
+    THEN 'Al día'
     WHEN f.estado = 'Vencida' THEN 'En mora'
     ELSE 'Debe'
   END AS estado_pago,
   f.estado AS estado_factura,
   f.fecha_emision,
-  EXTRACT(MONTH FROM f.fecha_emision)::int AS mes,
-  EXTRACT(YEAR FROM f.fecha_emision)::int AS anio,
-  p.ultima_fecha_pago,
+  COALESCE(
+    EXTRACT(MONTH FROM p.ultima_fecha_pago)::int,
+    EXTRACT(MONTH FROM f.fecha_pago)::int,
+    EXTRACT(MONTH FROM f.fecha_emision)::int,
+    EXTRACT(MONTH FROM CURRENT_DATE)::int
+  ) AS mes,
+  COALESCE(
+    EXTRACT(YEAR FROM p.ultima_fecha_pago)::int,
+    EXTRACT(YEAR FROM f.fecha_pago)::int,
+    EXTRACT(YEAR FROM f.fecha_emision)::int,
+    EXTRACT(YEAR FROM CURRENT_DATE)::int
+  ) AS anio,
+  COALESCE(p.ultima_fecha_pago, f.fecha_pago) AS ultima_fecha_pago,
   COALESCE(f.observaciones, 'Pensión') AS concepto,
   m.estado AS estado_matricula,
   m.anio_lectivo_id
@@ -59,8 +76,11 @@ LEFT JOIN factura f ON e.id = f.estudiante_id
     )
   )
 LEFT JOIN (
-  SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
-  FROM pago
-  GROUP BY factura_id
+  SELECT 
+    pago_inner.factura_id,
+    SUM(pago_inner.monto) AS monto_pagado, 
+    MAX(pago_inner.fecha_pago) AS ultima_fecha_pago
+  FROM pago pago_inner
+  GROUP BY pago_inner.factura_id
 ) p ON f.id = p.factura_id
 WHERE (m.estado IS NULL OR m.estado = 'Activa');

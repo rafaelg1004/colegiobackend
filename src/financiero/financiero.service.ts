@@ -612,17 +612,24 @@ export class FinancieroService {
         COALESCE(ac.celular, '') AS acudiente_celular,
         COALESCE(ac.correo_electronico, '') AS acudiente_correo,
         f.id AS factura_id,
-        f.numero_factura,
+        COALESCE(f.numero_factura, 'N/A') AS numero_factura,
         COALESCE(f.total, 0)::numeric AS monto_total,
-        COALESCE(p.monto_pagado, 0)::numeric AS monto_pagado,
+        COALESCE(
+          p.monto_pagado, 
+          f.monto_pagado, 
+          CASE WHEN f.estado = 'Pagada' THEN f.total ELSE 0 END
+        )::numeric AS monto_pagado,
         CASE 
           WHEN f.id IS NULL THEN 0
           WHEN f.estado = 'Pagada' THEN 0
-          ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, 0))
+          ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, f.monto_pagado, 0))
         END::numeric AS deuda,
         CASE 
           WHEN f.id IS NULL THEN 'Sin Factura'
-          WHEN f.estado = 'Pagada' OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, 0) >= f.total) THEN 'Al día'
+          WHEN f.estado = 'Pagada' 
+               OR COALESCE(p.monto_pagado, f.monto_pagado, 0) >= COALESCE(f.total, 0) 
+               OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, f.monto_pagado, 0) > 0)
+          THEN 'Al día'
           WHEN f.estado = 'Vencida' THEN 'En mora'
           ELSE 'Debe'
         END AS estado_pago,
@@ -630,7 +637,7 @@ export class FinancieroService {
         f.fecha_emision,
         $1::int AS mes,
         $2::int AS anio,
-        p.ultima_fecha_pago,
+        COALESCE(p.ultima_fecha_pago, f.fecha_pago) AS ultima_fecha_pago,
         COALESCE(f.observaciones, 'Pensión') AS concepto
       FROM matricula m
       JOIN estudiante e ON m.estudiante_id = e.id
@@ -639,8 +646,12 @@ export class FinancieroService {
       LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
       LEFT JOIN factura f ON e.id = f.estudiante_id 
         AND (f.estado IS NULL OR f.estado != 'Anulada')
-        AND EXTRACT(MONTH FROM f.fecha_emision) = $1
-        AND EXTRACT(YEAR FROM f.fecha_emision) = $2
+        AND (
+          EXTRACT(MONTH FROM f.fecha_emision) = $1 OR EXTRACT(MONTH FROM f.fecha_pago) = $1
+        )
+        AND (
+          EXTRACT(YEAR FROM f.fecha_emision) = $2 OR EXTRACT(YEAR FROM f.fecha_pago) = $2
+        )
         AND (
           f.observaciones ILIKE '%pensi%'
           OR EXISTS (
@@ -656,9 +667,12 @@ export class FinancieroService {
           )
         )
       LEFT JOIN (
-        SELECT factura_id, SUM(monto) AS monto_pagado, MAX(fecha_pago) AS ultima_fecha_pago
-        FROM pago
-        GROUP BY factura_id
+        SELECT 
+          pago_inner.factura_id,
+          SUM(pago_inner.monto) AS monto_pagado, 
+          MAX(pago_inner.fecha_pago) AS ultima_fecha_pago
+        FROM pago pago_inner
+        GROUP BY pago_inner.factura_id
       ) p ON f.id = p.factura_id
       WHERE (m.estado IS NULL OR m.estado = 'Activa')
     `;
@@ -674,7 +688,7 @@ export class FinancieroService {
 
     const { data, error } = await this.supabase.admin.query(sql, params);
     if (error) {
-      console.error('❌ Error consultando deudores por mes/año:', error);
+      console.error('❌ Error consultando deudores de pensión por mes/año:', error);
       throw new BadRequestException(error.message);
     }
 
