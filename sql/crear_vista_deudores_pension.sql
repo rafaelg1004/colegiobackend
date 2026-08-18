@@ -45,11 +45,17 @@ LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
 LEFT JOIN factura f ON e.id = f.estudiante_id 
   AND (f.estado IS NULL OR f.estado != 'Anulada')
   AND (
-    (f.observaciones IS NULL OR f.observaciones NOT ILIKE '%formulario%')
-    AND NOT EXISTS (
+    f.observaciones ILIKE '%pensi%'
+    OR EXISTS (
       SELECT 1 FROM factura_detalle df 
+      LEFT JOIN articulo_inventario ai ON df.articulo_inventario_id = ai.id
+      LEFT JOIN concepto_cobro cc ON df.concepto_cobro_id = cc.id
       WHERE df.factura_id = f.id 
-        AND df.descripcion ILIKE '%formulario%'
+        AND (
+          df.descripcion ILIKE '%pensi%' 
+          OR ai.nombre ILIKE '%pensi%'
+          OR cc.nombre ILIKE '%pensi%'
+        )
     )
   )
 LEFT JOIN (
