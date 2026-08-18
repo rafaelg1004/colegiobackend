@@ -17,40 +17,23 @@ SELECT
   f.id AS factura_id,
   f.numero_factura,
   COALESCE(f.total, 0)::numeric AS monto_total,
-  COALESCE(
-    p.monto_pagado, 
-    f.monto_pagado, 
-    CASE WHEN f.estado = 'Pagada' THEN f.total ELSE 0 END
-  )::numeric AS monto_pagado,
+  COALESCE(p.monto_pagado, 0)::numeric AS monto_pagado,
   CASE 
-    WHEN f.id IS NULL THEN 0
-    WHEN f.estado = 'Pagada' THEN 0
-    ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, f.monto_pagado, 0))
+    WHEN f.id IS NULL AND p.monto_pagado IS NULL THEN 0
+    WHEN f.estado = 'Pagada' OR COALESCE(p.monto_pagado, 0) >= COALESCE(f.total, 0) THEN 0
+    ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, 0))
   END::numeric AS deuda,
   CASE 
-    WHEN f.id IS NULL THEN 'Sin Factura'
-    WHEN f.estado = 'Pagada' 
-         OR COALESCE(p.monto_pagado, f.monto_pagado, 0) >= COALESCE(f.total, 0) 
-         OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, f.monto_pagado, 0) > 0)
-    THEN 'Al día'
-    WHEN f.estado = 'Vencida' THEN 'En mora'
-    ELSE 'Debe'
+    WHEN COALESCE(p.monto_pagado, 0) > 0 OR f.estado = 'Pagada' THEN 'Al día'
+    WHEN f.id IS NOT NULL AND f.estado = 'Vencida' THEN 'En mora'
+    WHEN f.id IS NOT NULL THEN 'Debe'
+    ELSE 'Sin Factura'
   END AS estado_pago,
   f.estado AS estado_factura,
   f.fecha_emision,
-  COALESCE(
-    EXTRACT(MONTH FROM p.ultima_fecha_pago)::int,
-    EXTRACT(MONTH FROM f.fecha_pago)::int,
-    EXTRACT(MONTH FROM f.fecha_emision)::int,
-    EXTRACT(MONTH FROM CURRENT_DATE)::int
-  ) AS mes,
-  COALESCE(
-    EXTRACT(YEAR FROM p.ultima_fecha_pago)::int,
-    EXTRACT(YEAR FROM f.fecha_pago)::int,
-    EXTRACT(YEAR FROM f.fecha_emision)::int,
-    EXTRACT(YEAR FROM CURRENT_DATE)::int
-  ) AS anio,
-  COALESCE(p.ultima_fecha_pago, f.fecha_pago) AS ultima_fecha_pago,
+  COALESCE(EXTRACT(MONTH FROM p.ultima_fecha_pago)::int, EXTRACT(MONTH FROM f.fecha_emision)::int) AS mes,
+  COALESCE(EXTRACT(YEAR FROM p.ultima_fecha_pago)::int, EXTRACT(YEAR FROM f.fecha_emision)::int) AS anio,
+  p.ultima_fecha_pago,
   COALESCE(f.observaciones, 'Pensión') AS concepto,
   m.estado AS estado_matricula,
   m.anio_lectivo_id
