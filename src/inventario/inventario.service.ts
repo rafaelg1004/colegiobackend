@@ -134,8 +134,6 @@ export class InventarioService {
 
     return data;
   }
-    return data;
-  }
 
   async updateArticulo(id: string, dto: UpdateArticuloDto) {
     const { data, error } = await this.supabase.admin
