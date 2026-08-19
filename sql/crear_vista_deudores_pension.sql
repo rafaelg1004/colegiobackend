@@ -1,6 +1,6 @@
 -- ================================================
 -- VISTA DE CONTROL DE PENSIONES Y DEUDORES POR ACUDIENTE
--- Importante: Asegúrate de estar conectado a la base de datos 'colegiosbinaria'
+-- Base de Datos: colegiosbinaria
 -- ================================================
 
 CREATE OR REPLACE VIEW vw_reporte_pensiones_deudores AS
@@ -50,9 +50,11 @@ SELECT
   COALESCE(EXTRACT(YEAR FROM p.ultima_fecha_pago)::int, EXTRACT(YEAR FROM f.fecha_emision)::int) AS anio,
   p.ultima_fecha_pago,
   COALESCE(f.observaciones, 'Pensión') AS concepto,
-  COALESCE(e.estado, 'Activo') AS estado_matricula
-FROM estudiante e
-LEFT JOIN grupo g ON e.grupo_id = g.id
+  m.estado AS estado_matricula,
+  m.anio_lectivo_id
+FROM matricula m
+JOIN estudiante e ON m.estudiante_id = e.id
+LEFT JOIN grupo g ON m.grupo_id = g.id
 LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
 LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
 LEFT JOIN factura f ON e.id = f.estudiante_id 
@@ -73,4 +75,4 @@ LEFT JOIN (
   FROM pago pago_inner
   GROUP BY pago_inner.factura_id
 ) p ON f.id = p.factura_id
-WHERE (e.estado IS NULL OR e.estado != 'Inactivo');
+WHERE (m.estado IS NULL OR m.estado = 'Activa');

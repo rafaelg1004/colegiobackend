@@ -649,8 +649,9 @@ export class FinancieroService {
         $2::int AS anio,
         COALESCE(p.ultima_fecha_pago, f.fecha_pago) AS ultima_fecha_pago,
         COALESCE(f.observaciones, 'Pensión') AS concepto
-      FROM estudiante e
-      LEFT JOIN grupo g ON e.grupo_id = g.id
+      FROM matricula m
+      JOIN estudiante e ON m.estudiante_id = e.id
+      LEFT JOIN grupo g ON m.grupo_id = g.id
       LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
       LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
       LEFT JOIN factura f ON e.id = f.estudiante_id 
@@ -704,7 +705,7 @@ export class FinancieroService {
         FROM pago pago_inner
         GROUP BY pago_inner.factura_id
       ) p ON f.id = p.factura_id
-      WHERE (e.estado IS NULL OR e.estado != 'Inactivo')
+      WHERE (m.estado IS NULL OR m.estado = 'Activa')
     `;
 
     const params: any[] = [m, a, mesNombre, mesPadded];
