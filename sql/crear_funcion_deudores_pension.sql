@@ -110,7 +110,7 @@ BEGIN
     FROM pago pago_inner
     GROUP BY pago_inner.factura_id
   ) p ON f.id = p.factura_id
-  WHERE (m.estado IS NULL OR m.estado = 'Activa')
+  WHERE (m.estado IS NULL OR m.estado ILIKE 'activ%' OR m.estado ILIKE 'matriculad%' OR m.estado NOT ILIKE 'inactiv%')
   ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC;
 END;
 $$ LANGUAGE plpgsql;

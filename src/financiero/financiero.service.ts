@@ -668,24 +668,32 @@ export class FinancieroService {
           EXTRACT(MONTH FROM f.fecha_emision) = $1 
           OR EXTRACT(MONTH FROM f.fecha_pago) = $1
           OR f.observaciones ILIKE '%' || $3 || '%'
+          OR f.observaciones ILIKE '%mes ' || $1::text || '%'
+          OR f.observaciones ILIKE '%mes ' || $4 || '%'
           OR f.observaciones ILIKE '% ' || $1::text || '/%'
           OR f.observaciones ILIKE '%-' || $1::text || '/%'
           OR f.observaciones ILIKE '%/' || $1::text || '/%'
           OR f.observaciones ILIKE '% ' || $4 || '/%'
           OR f.observaciones ILIKE '%-' || $4 || '/%'
           OR f.observaciones ILIKE '%/' || $4 || '/%'
+          OR f.observaciones ILIKE '%-' || $4 || '-%'
+          OR f.observaciones ILIKE '%/' || $4 || '-%'
           OR EXISTS (
             SELECT 1 FROM pago p_m WHERE p_m.factura_id = f.id AND EXTRACT(MONTH FROM p_m.fecha_pago) = $1 AND EXTRACT(YEAR FROM p_m.fecha_pago) = $2
           )
           OR EXISTS (
             SELECT 1 FROM factura_detalle df2 WHERE df2.factura_id = f.id AND (
               df2.descripcion ILIKE '%' || $3 || '%'
+              OR df2.descripcion ILIKE '%mes ' || $1::text || '%'
+              OR df2.descripcion ILIKE '%mes ' || $4 || '%'
               OR df2.descripcion ILIKE '% ' || $1::text || '/%'
               OR df2.descripcion ILIKE '%-' || $1::text || '/%'
               OR df2.descripcion ILIKE '%/' || $1::text || '/%'
               OR df2.descripcion ILIKE '% ' || $4 || '/%'
               OR df2.descripcion ILIKE '%-' || $4 || '/%'
               OR df2.descripcion ILIKE '%/' || $4 || '/%'
+              OR df2.descripcion ILIKE '%-' || $4 || '-%'
+              OR df2.descripcion ILIKE '%/' || $4 || '-%'
             )
           )
         )
@@ -718,6 +726,20 @@ export class FinancieroService {
     sql += ` ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC`;
 
     const { data, error } = await this.supabase.admin.query(sql, params);
+    
+    // 🔍 LOG DIAGNÓSTICO TEMPORAL - BORRAR DESPUÉS
+    console.log(`🔍 getDeudores(mes=${m}, anio=${a}, estado=${estadoFiltro}, grupo=${grupoId})`);
+    console.log(`🔍 SQL params: [${params.join(', ')}]`);
+    console.log(`🔍 data es null? ${data === null}, error? ${error ? error.message : 'no'}`);
+    console.log(`🔍 data length: ${data ? data.length : 'NULL'}`);
+    if (data && data.length > 0) {
+      console.log(`🔍 Primer registro:`, JSON.stringify(data[0]).substring(0, 200));
+    }
+    if (data && data.length === 0) {
+      console.log(`⚠️ QUERY RETORNÓ 0 FILAS PARA MES ${m}`);
+    }
+    // FIN LOG DIAGNÓSTICO
+    
     if (error) {
       console.error('❌ Error consultando deudores de pensión por mes/año:', error);
       throw new BadRequestException(error.message);

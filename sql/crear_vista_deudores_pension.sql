@@ -75,4 +75,4 @@ LEFT JOIN (
   FROM pago pago_inner
   GROUP BY pago_inner.factura_id
 ) p ON f.id = p.factura_id
-WHERE (m.estado IS NULL OR m.estado = 'Activa');
+WHERE (m.estado IS NULL OR m.estado ILIKE 'activ%' OR m.estado ILIKE 'matriculad%' OR m.estado NOT ILIKE 'inactiv%');
