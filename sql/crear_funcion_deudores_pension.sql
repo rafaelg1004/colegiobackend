@@ -1,5 +1,6 @@
 -- ================================================================
 -- FUNCION REPORTE DE PENSIONES Y DEUDORES POR MES Y AÑO EN POSTGRESQL
+-- Importante: Asegúrate de estar conectado a la base de datos 'colegiosbinaria'
 -- ================================================================
 
 CREATE OR REPLACE FUNCTION fn_reporte_pensiones_deudores(p_mes INT, p_anio INT)
@@ -70,11 +71,10 @@ BEGIN
     p_anio AS anio,
     COALESCE(p.ultima_fecha_pago, f.fecha_pago)::TIMESTAMP AS ultima_fecha_pago,
     COALESCE(f.observaciones, 'Pensión')::TEXT AS concepto,
-    m.estado::TEXT AS estado_matricula,
-    m.anio_lectivo_id AS anio_lectivo_id
-  FROM matricula m
-  JOIN estudiante e ON m.estudiante_id = e.id
-  LEFT JOIN grupo g ON m.grupo_id = g.id
+    COALESCE(e.estado, 'Activo')::TEXT AS estado_matricula,
+    NULL::uuid AS anio_lectivo_id
+  FROM estudiante e
+  LEFT JOIN grupo g ON e.grupo_id = g.id
   LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
   LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
   LEFT JOIN factura f ON e.id = f.estudiante_id 
@@ -109,7 +109,7 @@ BEGIN
     FROM pago pago_inner
     GROUP BY pago_inner.factura_id
   ) p ON f.id = p.factura_id
-  WHERE (m.estado IS NULL OR m.estado = 'Activa')
+  WHERE (e.estado IS NULL OR e.estado != 'Inactivo')
   ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC;
 END;
 $$ LANGUAGE plpgsql;
