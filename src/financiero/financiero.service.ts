@@ -623,19 +623,19 @@ export class FinancieroService {
         COALESCE(ac.correo_electronico, '') AS acudiente_correo,
         f.id AS factura_id,
         COALESCE(f.numero_factura, 'N/A') AS numero_factura,
-        COALESCE(NULLIF(f.total, 0), art.precio_venta, 170000)::numeric AS monto_total,
+        COALESCE(f.total, 0)::numeric AS monto_total,
         COALESCE(
           p.monto_pagado, 
           f.monto_pagado, 
           CASE WHEN f.estado = 'Pagada' THEN f.total ELSE 0 END
         )::numeric AS monto_pagado,
         CASE 
-          WHEN f.id IS NULL THEN COALESCE(art.precio_venta, 170000)
+          WHEN f.id IS NULL THEN 0
           WHEN f.estado = 'Pagada' THEN 0
           ELSE GREATEST(0, COALESCE(f.total, 0) - COALESCE(p.monto_pagado, f.monto_pagado, 0))
         END::numeric AS deuda,
         CASE 
-          WHEN f.id IS NULL THEN 'Debe'
+          WHEN f.id IS NULL THEN 'Sin Factura'
           WHEN f.estado = 'Pagada' 
                OR COALESCE(p.monto_pagado, f.monto_pagado, 0) >= COALESCE(f.total, 0) 
                OR (COALESCE(f.total, 0) > 0 AND COALESCE(p.monto_pagado, f.monto_pagado, 0) > 0)
@@ -654,13 +654,6 @@ export class FinancieroService {
       LEFT JOIN grupo g ON m.grupo_id = g.id
       LEFT JOIN estudiante_acudiente ea ON e.id = ea.estudiante_id
       LEFT JOIN acudiente ac ON ea.acudiente_id = ac.id
-      LEFT JOIN LATERAL (
-        SELECT COALESCE(precio_venta, precio_unitario, 170000) AS precio_venta
-        FROM articulo_inventario
-        WHERE es_servicio = true 
-          AND (nombre ILIKE '%pension%' OR nombre ILIKE '%pensión%')
-        LIMIT 1
-      ) art ON true
       LEFT JOIN factura f ON e.id = f.estudiante_id 
         AND (f.estado IS NULL OR f.estado != 'Anulada')
         AND (
