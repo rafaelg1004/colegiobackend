@@ -778,4 +778,53 @@ export class FinancieroService {
 
     return { deudores };
   }
+
+  async getDeudoresAnual(anio?: number, grupoId?: string) {
+    const a = Number(anio) || new Date().getFullYear();
+    const meses = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    
+    const resultadosPorMes = await Promise.all(
+      meses.map(m => this.getDeudores(m, a, 'Todos', grupoId))
+    );
+
+    const reporteAnualMap = new Map<string, any>();
+
+    resultadosPorMes.forEach((res, index) => {
+      const mesNum = index + 1;
+      const deudoresMes = res.deudores || [];
+
+      deudoresMes.forEach((d: any) => {
+        if (!reporteAnualMap.has(d.estudiante_id)) {
+          reporteAnualMap.set(d.estudiante_id, {
+            estudiante_id: d.estudiante_id,
+            estudiante_nombre: d.estudiante_nombre,
+            estudiante_documento: d.estudiante_documento,
+            grado: d.grado,
+            acudiente_id: d.acudiente_id,
+            acudiente_nombre: d.acudiente_nombre,
+            acudiente_documento: d.acudiente_documento,
+            acudiente_celular: d.acudiente_celular,
+            acudiente_correo: d.acudiente_correo,
+            meses: {},
+            deuda_total_anual: 0
+          });
+        }
+
+        const est = reporteAnualMap.get(d.estudiante_id);
+        est.meses[mesNum] = {
+          factura_id: d.factura_id,
+          numero_factura: d.numero_factura,
+          monto_total: d.monto_total,
+          monto_pagado: d.monto_pagado,
+          deuda: d.deuda,
+          estado: d.estado,
+          fecha_pago: d.fecha_pago
+        };
+
+        est.deuda_total_anual += Number(d.deuda || 0);
+      });
+    });
+
+    return { reporteAnual: Array.from(reporteAnualMap.values()), anio: a };
+  }
 }

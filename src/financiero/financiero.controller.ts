@@ -164,4 +164,17 @@ export class FinancieroController {
       grupo_id,
     );
   }
+
+  @Get('deudores-anual')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'rector', 'coordinador', 'secretaria')
+  getDeudoresAnual(
+    @Query('anio') anio?: string,
+    @Query('grupo_id') grupo_id?: string,
+  ) {
+    return this.finService.getDeudoresAnual(
+      anio ? parseInt(anio) : undefined,
+      grupo_id,
+    );
+  }
 }
