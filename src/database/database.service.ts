@@ -39,11 +39,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       user,
       password,
       max: 25,
-      min: 0,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 15000,
+      min: 3,
+      idleTimeoutMillis: 60000,
+      connectionTimeoutMillis: 30000,
       keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
+      keepAliveInitialDelayMillis: 5000,
       ssl: this.config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
     });
 
@@ -72,23 +72,32 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Query raw SQL con reintento automático por timeout
+  // Query raw SQL con reintento automático por error de conexión
   async query<T = any>(sql: string, params?: any[]): Promise<{ data: T[] | null; error: Error | null }> {
-    try {
-      const result = await this.pool.query(sql, params);
-      return { data: result.rows, error: null };
-    } catch (error: any) {
-      if (error?.message?.includes('timeout') || error?.message?.includes('terminated')) {
-        console.warn('⚠️ Re-intentando consulta PostgreSQL por timeout de conexión...');
-        try {
-          const retryResult = await this.pool.query(sql, params);
-          return { data: retryResult.rows, error: null };
-        } catch (retryErr: any) {
-          return { data: null, error: retryErr as Error };
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.pool.query(sql, params);
+        return { data: result.rows, error: null };
+      } catch (error: any) {
+        const isRetryable = error?.message?.includes('timeout') 
+          || error?.message?.includes('terminated')
+          || error?.message?.includes('Connection terminated')
+          || error?.message?.includes('ECONNRESET')
+          || error?.message?.includes('ECONNREFUSED')
+          || error?.code === 'EPIPE'
+          || error?.code === '57P01'; // admin_shutdown
+        
+        if (isRetryable && attempt < maxRetries) {
+          console.warn(`⚠️ Reintento ${attempt}/${maxRetries} - Error: ${error.message}`);
+          await new Promise(r => setTimeout(r, 500 * attempt)); // espera progresiva
+          continue;
         }
+        console.error(`❌ Query falló después de ${attempt} intentos:`, error.message);
+        return { data: null, error: error as Error };
       }
-      return { data: null, error: error as Error };
     }
+    return { data: null, error: new Error('Max retries exceeded') };
   }
 
   // Transacciones
