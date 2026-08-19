@@ -550,6 +550,9 @@ export class FinancieroService {
         continue;
       }
 
+      const mesNombreGen = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][mes - 1] || '';
+      const mesCap = mesNombreGen ? mesNombreGen.charAt(0).toUpperCase() + mesNombreGen.slice(1) : '';
+
       const { data: nuevaFactura, error: errorFact } = await this.supabase.admin
         .from('factura')
         .insert({
@@ -561,7 +564,7 @@ export class FinancieroService {
           estado: 'Emitida',
           estudiante_id: estudianteId,
           anio_lectivo_id: anio_lectivo_id || null,
-          observaciones: `${conceptoFinal.nombre} - ${mes}/${anio}`,
+          observaciones: `${conceptoFinal.nombre} - ${mesCap} ${anio} (${mes}/${anio})`,
         })
         .select('id')
         .single();
@@ -604,6 +607,7 @@ export class FinancieroService {
       7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
     };
     const mesNombre = nombreMeses[m] || '';
+    const mesPadded = m.toString().padStart(2, '0');
 
     let sql = `
       SELECT 
@@ -664,12 +668,34 @@ export class FinancieroService {
           EXTRACT(MONTH FROM f.fecha_emision) = $1 
           OR EXTRACT(MONTH FROM f.fecha_pago) = $1
           OR f.observaciones ILIKE '%' || $3 || '%'
+          OR f.observaciones ILIKE '% ' || $1 || '/%'
+          OR f.observaciones ILIKE '%-' || $1 || '/%'
+          OR f.observaciones ILIKE '%/' || $1 || '/%'
+          OR f.observaciones ILIKE '% ' || $4 || '/%'
+          OR f.observaciones ILIKE '%-' || $4 || '/%'
+          OR f.observaciones ILIKE '%/' || $4 || '/%'
           OR EXISTS (
-            SELECT 1 FROM factura_detalle df2 WHERE df2.factura_id = f.id AND df2.descripcion ILIKE '%' || $3 || '%'
+            SELECT 1 FROM pago p_m WHERE p_m.factura_id = f.id AND EXTRACT(MONTH FROM p_m.fecha_pago) = $1 AND EXTRACT(YEAR FROM p_m.fecha_pago) = $2
+          )
+          OR EXISTS (
+            SELECT 1 FROM factura_detalle df2 WHERE df2.factura_id = f.id AND (
+              df2.descripcion ILIKE '%' || $3 || '%'
+              OR df2.descripcion ILIKE '% ' || $1 || '/%'
+              OR df2.descripcion ILIKE '%-' || $1 || '/%'
+              OR df2.descripcion ILIKE '%/' || $1 || '/%'
+              OR df2.descripcion ILIKE '% ' || $4 || '/%'
+              OR df2.descripcion ILIKE '%-' || $4 || '/%'
+              OR df2.descripcion ILIKE '%/' || $4 || '/%'
+            )
           )
         )
         AND (
-          EXTRACT(YEAR FROM f.fecha_emision) = $2 OR EXTRACT(YEAR FROM f.fecha_pago) = $2
+          EXTRACT(YEAR FROM f.fecha_emision) = $2 
+          OR EXTRACT(YEAR FROM f.fecha_pago) = $2
+          OR f.observaciones ILIKE '%/' || $2 || '%'
+          OR EXISTS (
+            SELECT 1 FROM pago p_y WHERE p_y.factura_id = f.id AND EXTRACT(YEAR FROM p_y.fecha_pago) = $2
+          )
         )
       LEFT JOIN (
         SELECT 
@@ -682,7 +708,7 @@ export class FinancieroService {
       WHERE (m.estado IS NULL OR m.estado = 'Activa')
     `;
 
-    const params: any[] = [m, a, mesNombre];
+    const params: any[] = [m, a, mesNombre, mesPadded];
 
     if (grupoId) {
       params.push(grupoId);
