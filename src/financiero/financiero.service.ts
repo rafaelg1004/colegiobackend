@@ -726,20 +726,6 @@ export class FinancieroService {
     sql += ` ORDER BY g.nombre ASC, e.primer_apellido ASC, e.primer_nombre ASC`;
 
     const { data, error } = await this.supabase.admin.query(sql, params);
-    
-    // 🔍 LOG DIAGNÓSTICO TEMPORAL - BORRAR DESPUÉS
-    console.log(`🔍 getDeudores(mes=${m}, anio=${a}, estado=${estadoFiltro}, grupo=${grupoId})`);
-    console.log(`🔍 SQL params: [${params.join(', ')}]`);
-    console.log(`🔍 data es null? ${data === null}, error? ${error ? error.message : 'no'}`);
-    console.log(`🔍 data length: ${data ? data.length : 'NULL'}`);
-    if (data && data.length > 0) {
-      console.log(`🔍 Primer registro:`, JSON.stringify(data[0]).substring(0, 200));
-    }
-    if (data && data.length === 0) {
-      console.log(`⚠️ QUERY RETORNÓ 0 FILAS PARA MES ${m}`);
-    }
-    // FIN LOG DIAGNÓSTICO
-    
     if (error) {
       console.error('❌ Error consultando deudores de pensión por mes/año:', error);
       throw new BadRequestException(error.message);
