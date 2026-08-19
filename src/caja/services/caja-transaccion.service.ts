@@ -134,13 +134,14 @@ export class CajaTransaccionService {
         factura = facturaCreada;
         facturaId = facturaCreada.id;
 
-        const detallesInsert = dto.conceptos.map((c) => ({
+        const detallesInsert = dto.conceptos.map((c: any) => ({
           factura_id: facturaId,
           cantidad: c.cantidad,
           valor_unitario: c.valor_unitario,
           valor_iva: c.valor_iva,
           subtotal: c.cantidad * c.valor_unitario,
-          concepto_cobro_id: c.concepto_cobro_id,
+          concepto_cobro_id: c.concepto_cobro_id || c.concepto_id || null,
+          articulo_inventario_id: c.articulo_inventario_id || c.articulo_id || null,
           descripcion: c.descripcion,
         }));
 
