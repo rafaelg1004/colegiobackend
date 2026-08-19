@@ -668,9 +668,9 @@ export class FinancieroService {
           EXTRACT(MONTH FROM f.fecha_emision) = $1 
           OR EXTRACT(MONTH FROM f.fecha_pago) = $1
           OR f.observaciones ILIKE '%' || $3 || '%'
-          OR f.observaciones ILIKE '% ' || $1 || '/%'
-          OR f.observaciones ILIKE '%-' || $1 || '/%'
-          OR f.observaciones ILIKE '%/' || $1 || '/%'
+          OR f.observaciones ILIKE '% ' || $1::text || '/%'
+          OR f.observaciones ILIKE '%-' || $1::text || '/%'
+          OR f.observaciones ILIKE '%/' || $1::text || '/%'
           OR f.observaciones ILIKE '% ' || $4 || '/%'
           OR f.observaciones ILIKE '%-' || $4 || '/%'
           OR f.observaciones ILIKE '%/' || $4 || '/%'
@@ -680,9 +680,9 @@ export class FinancieroService {
           OR EXISTS (
             SELECT 1 FROM factura_detalle df2 WHERE df2.factura_id = f.id AND (
               df2.descripcion ILIKE '%' || $3 || '%'
-              OR df2.descripcion ILIKE '% ' || $1 || '/%'
-              OR df2.descripcion ILIKE '%-' || $1 || '/%'
-              OR df2.descripcion ILIKE '%/' || $1 || '/%'
+              OR df2.descripcion ILIKE '% ' || $1::text || '/%'
+              OR df2.descripcion ILIKE '%-' || $1::text || '/%'
+              OR df2.descripcion ILIKE '%/' || $1::text || '/%'
               OR df2.descripcion ILIKE '% ' || $4 || '/%'
               OR df2.descripcion ILIKE '%-' || $4 || '/%'
               OR df2.descripcion ILIKE '%/' || $4 || '/%'
@@ -692,7 +692,7 @@ export class FinancieroService {
         AND (
           EXTRACT(YEAR FROM f.fecha_emision) = $2 
           OR EXTRACT(YEAR FROM f.fecha_pago) = $2
-          OR f.observaciones ILIKE '%/' || $2 || '%'
+          OR f.observaciones ILIKE '%/' || $2::text || '%'
           OR EXISTS (
             SELECT 1 FROM pago p_y WHERE p_y.factura_id = f.id AND EXTRACT(YEAR FROM p_y.fecha_pago) = $2
           )
@@ -705,7 +705,7 @@ export class FinancieroService {
         FROM pago pago_inner
         GROUP BY pago_inner.factura_id
       ) p ON f.id = p.factura_id
-      WHERE (m.estado IS NULL OR m.estado = 'Activa')
+      WHERE (m.estado IS NULL OR m.estado ILIKE 'activ%' OR m.estado ILIKE 'matriculad%' OR m.estado NOT ILIKE 'inactiv%')
     `;
 
     const params: any[] = [m, a, mesNombre, mesPadded];
